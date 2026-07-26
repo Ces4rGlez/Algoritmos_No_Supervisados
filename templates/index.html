@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataInsights — ML Analytics</title>
+    <meta name="description" content="Plataforma de análisis de personalidad MBTI con Machine Learning no supervisado.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+
+<body>
+    <div class="app-shell">
+
+        <!-- ═══════════════════ TOP BAR ═══════════════════ -->
+        <header class="topbar">
+            <div class="topbar-brand">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                        d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.036-.84-1.875-1.875-1.875h-.75zM9.75 8.625c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v11.25c0 1.035-.84 1.875-1.875 1.875h-.75a1.875 1.875 0 01-1.875-1.875V8.625zM3 13.125c0-1.036.84-1.875 1.875-1.875h.75c1.036 0 1.875.84 1.875 1.875v6.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 013 19.875v-6.75z" />
+                </svg>
+                <span>Data<strong>Insights</strong></span>
+            </div>
+
+            <nav class="topbar-nav">
+                <button class="tab-btn active" data-tab="dashboard">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path
+                            d="M2 10a8 8 0 1116 0A8 8 0 012 10zm8-3a1 1 0 00-1 1v2a1 1 0 001 1h2a1 1 0 000-2h-1V8a1 1 0 00-1-1z" />
+                    </svg>
+                    Dashboard
+                </button>
+                <button class="tab-btn" data-tab="training">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
+                            clip-rule="evenodd" />
+                    </svg>
+                    Entrenamiento ML
+                </button>
+                <button class="tab-btn" data-tab="results">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path
+                            d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                    </svg>
+                    Resultados
+                </button>
+            </nav>
+
+            <div class="topbar-meta">
+                <span class="badge-live">● En vivo</span>
+            </div>
+        </header>
+
+        <!-- ═══════════════════ CONTENT AREA ═══════════════════ -->
+        <main class="main-content">
+
+            <!-- ──────────── TAB 1: Dashboard ──────────── -->
+            <section id="dashboard" class="tab-content active">
+                <div class="page-header">
+                    <div>
+                        <h1>Dashboard Analítico</h1>
+                        <p>Gestiona, visualiza y filtra los datos disponibles para el análisis.</p>
+                    </div>
+                </div>
+
+                <!-- Upload -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Carga de Set de Datos <span class="chip">.csv</span></h3>
+                    </div>
+                    <label class="upload-zone" for="file-input" id="upload-zone">
+                        <div class="upload-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                            </svg>
+                        </div>
+                        <div class="upload-text">
+                            <p class="upload-title">Arrastra un archivo CSV aquí</p>
+                            <p class="upload-hint">o haz clic para seleccionar uno — sobreescribirá los datos actuales
+                            </p>
+                        </div>
+                        <input type="file" id="file-input" accept=".csv">
+                    </label>
+                    <p id="upload-status" class="success-msg hidden"></p>
+                </div>
+
+                <!-- Filters -->
+                <div class="card filters-card">
+                    <div class="filter-group">
+                        <label for="filter-gender">Género</label>
+                        <select id="filter-gender">
+                            <option value="Todos">Todos</option>
+                            <option value="Masculino">Masculino</option>
+                            <option value="Femenino">Femenino</option>
+                            <option value="Otro">Otro</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-age">Rango de Edad</label>
+                        <select id="filter-age">
+                            <option value="Todos">Todos</option>
+                            <option value="18-22">18-22</option>
+                            <option value="23-27">23-27</option>
+                            <option value="28-32">28-32</option>
+                            <option value="33+">33+</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-mbti">Tipo MBTI</label>
+                        <select id="filter-mbti">
+                            <option value="Todos">Todos</option>
+                            <option value="INTJ">INTJ</option>
+                            <option value="INTP">INTP</option>
+                            <option value="ENTJ">ENTJ</option>
+                            <option value="ENTP">ENTP</option>
+                            <option value="INFJ">INFJ</option>
+                            <option value="INFP">INFP</option>
+                            <option value="ENFJ">ENFJ</option>
+                            <option value="ENFP">ENFP</option>
+                            <option value="ISTJ">ISTJ</option>
+                            <option value="ISFJ">ISFJ</option>
+                            <option value="ESTJ">ESTJ</option>
+                            <option value="ESFJ">ESFJ</option>
+                            <option value="ISTP">ISTP</option>
+                            <option value="ISFP">ISFP</option>
+                            <option value="ESTP">ESTP</option>
+                            <option value="ESFP">ESFP</option>
+                        </select>
+                    </div>
+                    <div class="filter-actions">
+                        <button id="btn-apply-filters" class="btn primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L13 10.414V17a1 1 0 01-1.447.894l-4-2A1 1 0 017 15V10.414L3.293 6.707A1 1 0 013 6V3z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            Filtrar
+                        </button>
+                        <button id="btn-download-data" class="btn secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            Exportar CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KPI Cards (populated by JS) -->
+                <div id="kpi-cards-container" class="kpi-grid"></div>
+
+                <!-- Charts Grid -->
+                <div class="charts-grid">
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3 id="hist-title">Histograma</h3>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Distribución MBTI</h3>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-mbti"></canvas></div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Distribución por Edad</h3>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-age"></canvas></div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Promedios por Dimensión</h3>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-means"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- Data Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Registros del Dataset <span class="chip-count" id="total-records">0</span></h3>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="data-table">
+                            <thead id="data-table-head"></thead>
+                            <tbody id="data-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination">
+                        <button id="btn-first-page" class="btn-page" title="Primera página">««</button>
+                        <button id="btn-prev-page" class="btn-page">‹ Anterior</button>
+                        <span id="page-indicator">Página 1</span>
+                        <button id="btn-next-page" class="btn-page">Siguiente ›</button>
+                        <button id="btn-last-page" class="btn-page" title="Última página">»»</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ──────────── TAB 2: Training ──────────── -->
+            <section id="training" class="tab-content">
+                <div class="page-header">
+                    <div>
+                        <h1>Entrenamiento ML</h1>
+                        <p>Agrupa tus datos seleccionando las características y el algoritmo deseado.</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Configuración del Modelo</h3>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="algo-select">Algoritmo</label>
+                            <select id="algo-select">
+                                <option value="kmeans">K-Means Clustering</option>
+                                <option value="gmm">Gaussian Mixture Model</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="clusters-input">Número de Clústeres (k)</label>
+                            <input type="number" id="clusters-input" value="16" min="2" max="50">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top:1.25rem">
+                        <label>Características a evaluar <span class="label-hint">(mínimo 2 numéricas)</span></label>
+                        <div class="features-grid" id="features-container">
+                            <span style="font-size:0.85rem;color:var(--text-muted)">Cargando características...</span>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button id="btn-train" class="btn primary btn-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            Ejecutar Agrupamiento
+                        </button>
+                        <div id="training-loader" class="loader-container hidden">
+                            <div class="spinner"></div>
+                            <span>Entrenando modelo y calculando PCA, por favor espera...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="save-model-panel" class="card hidden">
+                    <div class="card-header">
+                        <h3 style="color: #059669;"> Modelo Entrenado Exitosamente</h3>
+                        <span class="variance-badge">Varianza PCA 2D: <strong id="variance-val">0</strong>%</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="model-desc">Descripción / Metadatos</label>
+                        <textarea id="model-desc"
+                            placeholder="Escribe aquí para qué sirve o cómo entrenaste este modelo..."></textarea>
+                    </div>
+                    <div class="form-actions"
+                        style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; justify-content: flex-end;">
+                        <button id="btn-save-model" class="btn secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path
+                                    d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293z" />
+                            </svg>
+                            Guardar Modelo
+                        </button>
+                    </div>
+                    <p id="save-msg" class="success-msg hidden"></p>
+                </div>
+            </section>
+
+            <!-- ──────────── TAB 3: Results ──────────── -->
+            <section id="results" class="tab-content">
+                <div class="page-header">
+                    <div>
+                        <h1>Agrupamiento Resultante</h1>
+                        <p>Visualización de los clústeres encontrados por el algoritmo.</p>
+                    </div>
+                </div>
+
+                <!-- Interpretation callout -->
+                <div class="callout callout-info">
+                    <div class="callout-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd"
+                                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                                clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="callout-body">
+                        <h4>¿Cómo interpretar este gráfico?</h4>
+                        <p><strong>Ejes X/Y (PCA):</strong> El algoritmo comprimió todas las características numéricas
+                            seleccionadas en 2 dimensiones usando <em>Análisis de Componentes Principales</em>,
+                            conservando la mayor varianza posible.</p>
+                        <p style="margin-top:0.5rem"><strong>Colores (Clústeres):</strong> Cada punto es una persona.
+                            Los del mismo color pertenecen al mismo clúster — el algoritmo los descubrió matemáticamente
+                            sin etiquetas.</p>
+                    </div>
+                </div>
+
+                <!-- Charts -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Dispersión de Clústeres (PCA 2D)</h3>
+                    </div>
+                    <div class="result-chart-wrap">
+                        <canvas id="chart-clusters"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Visualización 3D (PCA 3D)</h3>
+                    </div>
+                    <div class="result-chart-wrap">
+                        <div id="chart-3d" style="width:100%;height:100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Prediction Simulator -->
+                <div class="card" id="prediction-simulator-panel" style="display:none">
+                    <div class="card-header">
+                        <h3> Simulador de Predicción</h3>
+                    </div>
+                    <div class="callout callout-purple" style="margin-bottom:1.25rem">
+                        <div class="callout-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path
+                                    d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+                            </svg>
+                        </div>
+                        <div class="callout-body">
+                            <h4>¿Qué hace este simulador?</h4>
+                            <p>El modelo ya encontró los patrones y creó los <strong>Clústeres (Grupos)</strong>.
+                                Ingresa valores de una persona nueva y el algoritmo calculará instantáneamente a qué
+                                grupo pertenecería, <strong>sin reentrenar el modelo</strong>.</p>
+                        </div>
+                    </div>
+                    <div id="prediction-form-container" class="prediction-grid"></div>
+                    <div class="form-actions" style="margin-top:1rem">
+                        <button class="btn primary" id="btn-predict-cluster">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                            Predecir Clúster
+                        </button>
+                    </div>
+                    <div id="prediction-result" class="prediction-result"></div>
+                </div>
+
+                <!-- Cluster Composition -->
+                <div class="card" id="composition-panel" style="display:none">
+                    <div class="card-header">
+                        <h3>Efectividad: Composición de Clústeres</h3>
+                    </div>
+                    <p class="card-description">Este análisis muestra si el algoritmo logró aislar categorías MBTI de
+                        forma "pura". Una pureza alta significa que el algoritmo descubrió esa categoría
+                        matemáticamente.</p>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Clúster</th>
+                                    <th>Tamaño</th>
+                                    <th>Categoría Dominante</th>
+                                    <th>Pureza / Efectividad</th>
+                                </tr>
+                            </thead>
+                            <tbody id="composition-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}?v=3"></script>
+</body>
+
+</html>

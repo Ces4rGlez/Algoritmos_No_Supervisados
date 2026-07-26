@@ -1,0 +1,30 @@
+# Python virtual environment
+venv/
+env/
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# User generated uploads and models
+uploads/*
+!uploads/.gitkeep
+models/*
+!models/.gitkeep
+
+# Exclude generated CSVs (if you want to ignore all except the original 10k dataset)
+# Uncomment the line below to ignore all CSVs
+# *.csv
+# !datos_mbti_10k.csv
+
+# Environment variables
+.env
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
