@@ -13,6 +13,9 @@ Este proyecto es una plataforma interactiva que aplica **Inteligencia Artificial
    * Visualizador interactivo en 3D del espacio latente (Plotly).
    * Simulador predictivo: ingresa nuevas calificaciones manuales y descubre a qué clúster matemático perteneces en tiempo real.
 4. **Generador de Datos Personalizados**: Incluye un script generador de datos hiper-realistas para escalar de los 54 perfiles originales a 10,000 registros con ruido gaussiano estadístico.
+5. **Exportación e Importación Profesional**:
+    * **Guardar e Importar Modelos (.pkl)**: Puedes guardar un algoritmo entrenado para uso posterior y volverlo a cargar sin necesidad de reentrenar todo desde cero, viendo sus gráficas y usando su simulador de inmediato.
+    * **Exportar Datos**: Exporta el dataset base filtrado o el dataset resultante con los clústeres asignados, tanto en formato `.csv` como en `.xlsx` (Excel).
 
 ##  Tecnologías Utilizadas
 
@@ -50,7 +53,7 @@ source venv/bin/activate
 ### 3. Instalar las dependencias
 Instala los paquetes necesarios para correr la aplicación:
 ```bash
-pip install Flask pandas numpy scikit-learn joblib
+pip install Flask pandas numpy scikit-learn joblib openpyxl
 ```
 *(Nota: Si usas Windows, asegúrate de que estás en el entorno virtual activado al correr el comando).*
 

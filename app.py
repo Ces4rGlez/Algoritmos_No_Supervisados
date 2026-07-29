@@ -5,6 +5,7 @@ import os
 from ml_models import MBTIClusterModel
 import io
 import datetime
+import json
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -176,10 +177,16 @@ def api_stats():
         stats['mins'][label] = float(df[c].min())
         stats['maxs'][label] = float(df[c].max())
         
-    # Histogram data for the first numeric column
+    # Histogram data
     if len(numeric_cols) > 0:
-        hist_col = numeric_cols[0]
+        hist_col_req = request.args.get('hist_col', '')
+        if hist_col_req and hist_col_req in numeric_cols:
+            hist_col = hist_col_req
+        else:
+            hist_col = numeric_cols[0]
+            
         stats['hist_col'] = hist_col
+        stats['numeric_cols'] = numeric_cols
         # Calculate bins
         hist, bin_edges = np.histogram(df[hist_col].dropna(), bins=15)
         stats['hist_data'] = {
@@ -221,6 +228,8 @@ def api_train():
         results = model.train(df_ml, features, algorithm=algorithm, n_clusters=n_clusters)
         
         app.config['CURRENT_MODEL'] = model
+        app.config['LAST_LABELS'] = results['labels']
+        app.config['LAST_FEATURES'] = features
         
         # Calculate cluster composition if a categorical column exists (like tipo_resultante)
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
@@ -281,6 +290,171 @@ def api_save_model():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/load_model', methods=['POST'])
+def api_load_model():
+    """Load a previously saved .pkl model file from the server models/ directory."""
+    data = request.json
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
+
+    filepath = os.path.join(app.config['MODEL_DIR'], filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': f'Model file not found: {filename}'}), 404
+
+    model = MBTIClusterModel()
+    try:
+        metadata = model.load(filepath)
+    except Exception as e:
+        return jsonify({'error': f'Failed to load model: {str(e)}'}), 500
+
+    app.config['CURRENT_MODEL'] = model
+
+    # Re-run predictions on current dataset to rebuild PCA visualisation
+    df = get_data()
+    if df.empty or not model.features:
+        return jsonify({
+            'message': 'Model loaded (no dataset available for visualisation)',
+            'metadata': metadata,
+            'features': model.features
+        })
+
+    missing = [f for f in model.features if f not in df.columns]
+    if missing:
+        return jsonify({
+            'error': f'Loaded model requires features not in current dataset: {missing}'
+        }), 400
+
+    df_ml = df[model.features].fillna(df[model.features].mean())
+    X = df_ml.values
+    labels = model.model.predict(df_ml).tolist()
+    X_pca = model.pca.transform(df_ml)
+    n_comp = X_pca.shape[1]
+
+    app.config['LAST_LABELS'] = labels
+    app.config['LAST_FEATURES'] = model.features
+
+    results = {
+        'labels': labels,
+        'x_pca': X_pca[:, 0].tolist(),
+        'y_pca': X_pca[:, 1].tolist() if n_comp > 1 else [0]*len(labels),
+        'z_pca': X_pca[:, 2].tolist() if n_comp > 2 else [0]*len(labels),
+        'explained_variance': float(sum(model.pca.explained_variance_ratio_)),
+        'n_clusters': len(set(labels)),
+        'algorithm': model.model_type,
+        'features': model.features,
+        'metadata': metadata
+    }
+
+    # Calculate cluster composition
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    eval_col = 'tipo_resultante' if 'tipo_resultante' in categorical_cols else None
+    if not eval_col and len(categorical_cols) > 0:
+        for col in categorical_cols:
+            if 2 <= df[col].nunique() <= 50:
+                eval_col = col
+                break
+                
+    if eval_col:
+        composition = []
+        df_with_labels = df.copy()
+        df_with_labels['cluster'] = labels
+        unique_clusters = set(labels)
+        
+        for cluster_id in unique_clusters:
+            cluster_data = df_with_labels[df_with_labels['cluster'] == cluster_id]
+            if len(cluster_data) > 0:
+                dist = cluster_data[eval_col].value_counts(normalize=True)
+                top_label = dist.index[0]
+                purity = dist.iloc[0] * 100
+                
+                composition.append({
+                    'cluster': cluster_id,
+                    'size': len(cluster_data),
+                    'dominant_label': top_label,
+                    'purity': round(purity, 2),
+                    'eval_col': eval_col
+                })
+        # Sort by cluster id
+        composition.sort(key=lambda x: x['cluster'])
+        results['composition'] = composition
+
+    # Sample for viz if large
+    if len(results['x_pca']) > 2000:
+        indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
+        results['x_pca']  = [results['x_pca'][i]  for i in indices]
+        results['y_pca']  = [results['y_pca'][i]  for i in indices]
+        results['labels'] = [results['labels'][i]  for i in indices]
+
+    return jsonify(results)
+
+
+@app.route('/api/list_models', methods=['GET'])
+def api_list_models():
+    """Return the list of saved .pkl model files."""
+    model_dir = app.config['MODEL_DIR']
+    files = []
+    for f in os.listdir(model_dir):
+        if f.endswith('.pkl'):
+            meta_path = os.path.join(model_dir, f + '.meta.json')
+            meta = {}
+            if os.path.exists(meta_path):
+                with open(meta_path) as mf:
+                    meta = json.load(mf)
+            files.append({'filename': f, 'metadata': meta})
+    files.sort(key=lambda x: x['filename'], reverse=True)
+    return jsonify(files)
+
+
+@app.route('/api/download_results', methods=['GET'])
+def api_download_results():
+    """Download the current dataset with cluster labels appended."""
+    if 'LAST_LABELS' not in app.config:
+        return jsonify({'error': 'No clustering results available. Train or load a model first.'}), 400
+
+    df = get_data()
+    labels = app.config['LAST_LABELS']
+
+    if len(labels) != len(df):
+        # Labels are from a sampled subset — just attach what we have
+        df_out = df.copy().reset_index(drop=True)
+        label_series = pd.Series(labels + [None] * (len(df_out) - len(labels)))
+        df_out.insert(0, 'cluster', label_series)
+    else:
+        df_out = df.copy().reset_index(drop=True)
+        df_out.insert(0, 'cluster', labels)
+
+    export_format = request.args.get('format', 'csv')
+
+    if export_format == 'excel':
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_out.to_excel(writer, index=False, sheet_name='Resultados')
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='resultados_clusters.xlsx'
+        )
+    else:
+        output = io.StringIO()
+        df_out.to_csv(output, index=False)
+        output.seek(0)
+        mem = io.BytesIO()
+        mem.write(output.getvalue().encode('utf-8'))
+        mem.seek(0)
+
+        return send_file(
+            mem,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name='resultados_clusters.csv'
+        )
+
+
 @app.route('/api/predict', methods=['POST'])
 def api_predict():
     data = request.json
@@ -324,20 +498,35 @@ def api_download():
     if tipo_mbti and tipo_mbti != 'Todos' and 'tipo_resultante' in df.columns:
         df = df[df['tipo_resultante'] == tipo_mbti]
         
-    output = io.StringIO()
-    df.to_csv(output, index=False)
-    output.seek(0)
+    export_format = request.args.get('format', 'csv')
     
-    mem = io.BytesIO()
-    mem.write(output.getvalue().encode('utf-8'))
-    mem.seek(0)
-    
-    return send_file(
-        mem,
-        mimetype='text/csv',
-        as_attachment=True,
-        download_name='datos_exportados.csv'
-    )
+    if export_format == 'excel':
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Datos')
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='datos_exportados.xlsx'
+        )
+    else:
+        output = io.StringIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        
+        mem = io.BytesIO()
+        mem.write(output.getvalue().encode('utf-8'))
+        mem.seek(0)
+        
+        return send_file(
+            mem,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name='datos_exportados.csv'
+        )
 
 if __name__ == '__main__':
     app.run(debug=True, host='127.0.0.1', port=5000)

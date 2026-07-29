@@ -7,11 +7,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => {
             tabBtns.forEach(b => b.classList.remove('active'));
             tabContents.forEach(t => t.classList.remove('active'));
-            
+
             btn.classList.add('active');
             const targetTab = btn.getAttribute('data-tab');
             document.getElementById(targetTab).classList.add('active');
-            
+
             if (targetTab === 'dashboard') {
                 loadData();
                 loadStats();
@@ -22,25 +22,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- File Upload Logic ---
     const fileInput = document.getElementById('file-input');
     const uploadStatus = document.getElementById('upload-status');
-    
+
     fileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        
+
         const formData = new FormData();
         formData.append('file', file);
-        
+
         uploadStatus.classList.remove('hidden');
         uploadStatus.style.color = '#64748b';
         uploadStatus.innerHTML = 'Subiendo archivo...';
-        
+
         try {
             const res = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData
             });
             const result = await res.json();
-            
+
             if (res.ok) {
                 uploadStatus.style.color = '#16a34a';
                 uploadStatus.innerHTML = '¡Archivo subido exitosamente! Los datos se han actualizado.';
@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 uploadStatus.style.color = '#ef4444';
                 uploadStatus.innerHTML = `Error: ${result.error}`;
             }
-        } catch(err) {
+        } catch (err) {
             uploadStatus.style.color = '#ef4444';
             uploadStatus.innerHTML = `Error de conexión: ${err.message}`;
         }
@@ -67,11 +67,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let histChart = null;
 
     const btnApplyFilters = document.getElementById('btn-apply-filters');
-    const btnPrevPage     = document.getElementById('btn-prev-page');
-    const btnNextPage     = document.getElementById('btn-next-page');
-    const btnFirstPage    = document.getElementById('btn-first-page');
-    const btnLastPage     = document.getElementById('btn-last-page');
-    const btnDownload     = document.getElementById('btn-download-data');
+    const btnPrevPage = document.getElementById('btn-prev-page');
+    const btnNextPage = document.getElementById('btn-next-page');
+    const btnFirstPage = document.getElementById('btn-first-page');
+    const btnLastPage = document.getElementById('btn-last-page');
+    const btnDownload = document.getElementById('btn-download-data');
     let totalPages = 1;
 
     btnApplyFilters.addEventListener('click', () => {
@@ -79,6 +79,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loadData();
         loadStats();
     });
+    
+    const histColSelect = document.getElementById('hist-col-select');
+    if (histColSelect) {
+        histColSelect.addEventListener('change', () => {
+            loadStats();
+        });
+    }
 
     btnFirstPage.addEventListener('click', () => { if (currentPage > 1) { currentPage = 1; loadData(); } });
     btnLastPage.addEventListener('click', () => { if (currentPage < totalPages) { currentPage = totalPages; loadData(); } });
@@ -90,15 +97,27 @@ document.addEventListener('DOMContentLoaded', () => {
     btnNextPage.addEventListener('click', () => {
         if (currentPage < totalPages) { currentPage++; loadData(); }
     });
-    
+
     btnDownload.addEventListener('click', () => {
         const genero = document.getElementById('filter-gender').value;
         const edad = document.getElementById('filter-age').value;
         const mbti = document.getElementById('filter-mbti').value;
-        
-        let url = `/api/download?genero=${encodeURIComponent(genero)}&rango_edad=${encodeURIComponent(edad)}&tipo_mbti=${encodeURIComponent(mbti)}`;
+
+        let url = `/api/download?genero=${encodeURIComponent(genero)}&rango_edad=${encodeURIComponent(edad)}&tipo_mbti=${encodeURIComponent(mbti)}&format=csv`;
         window.open(url, '_blank');
     });
+
+    const btnDownloadExcel = document.getElementById('btn-download-excel');
+    if (btnDownloadExcel) {
+        btnDownloadExcel.addEventListener('click', () => {
+            const genero = document.getElementById('filter-gender').value;
+            const edad = document.getElementById('filter-age').value;
+            const mbti = document.getElementById('filter-mbti').value;
+
+            let url = `/api/download?genero=${encodeURIComponent(genero)}&rango_edad=${encodeURIComponent(edad)}&tipo_mbti=${encodeURIComponent(mbti)}&format=excel`;
+            window.open(url, '_blank');
+        });
+    }
 
     function getFiltersParams() {
         const genero = document.getElementById('filter-gender').value;
@@ -114,37 +133,37 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(url);
             if (!res.ok) throw new Error('Network response was not ok');
             const result = await res.json();
-            
+
             renderTable(result.data, result.columns);
             updateFeaturesCheckboxes(result.numeric_columns);
-            
+
             document.getElementById('total-records').innerText = result.total;
             document.getElementById('page-indicator').innerText = `Pág. ${result.page} / ${Math.ceil(result.total / result.per_page)}`;
             totalPages = Math.ceil(result.total / result.per_page);
-            
+
             btnFirstPage.disabled = result.page === 1;
-            btnPrevPage.disabled  = result.page === 1;
-            btnNextPage.disabled  = result.page >= totalPages;
-            btnLastPage.disabled  = result.page >= totalPages;
-            
+            btnPrevPage.disabled = result.page === 1;
+            btnNextPage.disabled = result.page >= totalPages;
+            btnLastPage.disabled = result.page >= totalPages;
+
         } catch (error) {
             console.error("Error loading data:", error);
         }
     }
-    
+
     function updateFeaturesCheckboxes(num_cols) {
         const container = document.getElementById('features-container');
         container.innerHTML = '';
-        
+
         if (!num_cols || num_cols.length === 0) {
             container.innerHTML = '<span style="color:#ef4444">No se encontraron columnas numéricas para analizar.</span>';
             return;
         }
-        
+
         // Prioritize MBTI columns if they exist, otherwise select top 4
         const mbtiCols = ['energia_score', 'percepcion_score', 'decision_score', 'estilo_score'];
         const hasMbti = mbtiCols.every(c => num_cols.includes(c));
-        
+
         num_cols.forEach((col, idx) => {
             let isChecked = false;
             if (hasMbti) {
@@ -152,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (idx < 5) {
                 isChecked = true;
             }
-            
+
             const label = document.createElement('label');
             label.className = 'feature-checkbox';
             label.innerHTML = `
@@ -166,12 +185,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderTable(data, columns) {
         const thead = document.getElementById('data-table-head');
         const tbody = document.getElementById('data-table-body');
-        
+
         thead.innerHTML = '';
         tbody.innerHTML = '';
-        
+
         if (data.length === 0 || columns.length === 0) return;
-        
+
         // Header
         const trHead = document.createElement('tr');
         columns.slice(0, 10).forEach(col => { // Show max 10 cols to avoid overflow chaos
@@ -185,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
             trHead.appendChild(th);
         }
         thead.appendChild(trHead);
-        
+
         // Body
         data.forEach(row => {
             const tr = document.createElement('tr');
@@ -208,16 +227,34 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadStats() {
         try {
             const params = getFiltersParams();
-            const res = await fetch(`/api/stats?${params}&t=${new Date().getTime()}`);
+            const histColSelect = document.getElementById('hist-col-select');
+            const histCol = histColSelect ? histColSelect.value : '';
+            
+            const res = await fetch(`/api/stats?${params}&hist_col=${histCol}&t=${new Date().getTime()}`);
             if (!res.ok) throw new Error('Network response was not ok');
             const stats = await res.json();
             
-            
+            if (histColSelect && stats.numeric_cols) {
+                // Only populate if empty to avoid losing selection on every update
+                if (histColSelect.options.length === 0) {
+                    stats.numeric_cols.forEach(col => {
+                        const opt = document.createElement('option');
+                        opt.value = col;
+                        opt.textContent = col;
+                        histColSelect.appendChild(opt);
+                    });
+                }
+                if (stats.hist_col) {
+                    histColSelect.value = stats.hist_col;
+                }
+            }
+
+
             renderKpiCards(stats.means, stats.stds);
             renderMbtiChart(stats.tipo_dist);
             renderAgeChart(stats.edad_dist);
             renderMeansChart(stats.means);
-            if(stats.hist_data && stats.hist_col) {
+            if (stats.hist_data && stats.hist_col) {
                 renderHistChart(stats.hist_data, stats.hist_col);
             }
         } catch (error) {
@@ -229,7 +266,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = document.getElementById('chart-mbti').getContext('2d');
         const labels = Object.keys(tipoDist);
         const data = Object.values(tipoDist);
-        
+
         const colors = [
             '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd',
             '#1e40af', '#1e3a8a', '#475569', '#64748b',
@@ -238,10 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
 
         if (mbtiChart) mbtiChart.destroy();
-        
+
         Chart.defaults.color = '#64748b';
         Chart.defaults.font.family = 'Inter';
-        
+
         mbtiChart = new Chart(ctx, {
             type: 'pie',
             data: {
@@ -271,18 +308,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     function renderAgeChart(edadDist) {
         const ctx = document.getElementById('chart-age').getContext('2d');
         if (!edadDist || Object.keys(edadDist).length === 0) return;
-        
+
         const labels = Object.keys(edadDist);
         const data = Object.values(edadDist);
-        
+
         const colors = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6', '#84cc16'];
-        
+
         if (ageChart) ageChart.destroy();
-        
+
         ageChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
@@ -311,9 +348,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = document.getElementById('chart-means').getContext('2d');
         const labels = Object.keys(means);
         const data = Object.values(means);
-        
+
         if (meansChart) meansChart.destroy();
-        
+
         meansChart = new Chart(ctx, {
             type: 'radar',
             data: {
@@ -350,17 +387,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderKpiCards(means, stds) {
         const container = document.getElementById('kpi-cards-container');
         container.innerHTML = '';
-        
+
         let count = 0;
         for (const [key, val] of Object.entries(means)) {
-            if(count >= 4) break;
+            if (count >= 4) break;
             const std = stds[key] || 0;
             const card = document.createElement('div');
             card.className = 'panel';
             card.style.padding = '1.5rem';
             card.style.display = 'flex';
             card.style.flexDirection = 'column';
-            
+
             card.innerHTML = `
                 <span style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">Promedio de ${key}</span>
                 <span style="font-size: 2rem; font-weight: 700; color: var(--primary); margin: 0.5rem 0;">${val.toFixed(2)}</span>
@@ -374,15 +411,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderHistChart(histData, colName) {
         document.getElementById('hist-title').innerText = `Histograma: ${colName}`;
         const ctx = document.getElementById('chart-hist').getContext('2d');
-        
+
         // Build labels from bin edges
         const labels = [];
-        for(let i=0; i<histData.bins.length - 1; i++) {
-            labels.push(`${histData.bins[i].toFixed(1)} - ${histData.bins[i+1].toFixed(1)}`);
+        for (let i = 0; i < histData.bins.length - 1; i++) {
+            labels.push(`${histData.bins[i].toFixed(1)} - ${histData.bins[i + 1].toFixed(1)}`);
         }
-        
+
         if (histChart) histChart.destroy();
-        
+
         histChart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -415,70 +452,70 @@ document.addEventListener('DOMContentLoaded', () => {
     const varianceVal = document.getElementById('variance-val');
     const btnSaveModel = document.getElementById('btn-save-model');
     const saveMsg = document.getElementById('save-msg');
-    
+
     let clustersChart = null;
 
     btnTrain.addEventListener('click', async () => {
         const algorithm = document.getElementById('algo-select').value;
         const n_clusters = document.getElementById('clusters-input').value;
-        
+
         // Get selected features
         const featureCheckboxes = document.querySelectorAll('.feature-cb:checked');
         const selectedFeatures = Array.from(featureCheckboxes).map(cb => cb.value);
-        
+
         if (selectedFeatures.length < 2) {
             alert('Por favor selecciona al menos 2 características para entrenar el modelo.');
             return;
         }
-        
+
         btnTrain.disabled = true;
         loader.classList.remove('hidden');
         saveModelPanel.classList.add('hidden');
-        
+
         try {
             const res = await fetch('/api/train', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    algorithm, 
+                body: JSON.stringify({
+                    algorithm,
                     n_clusters: n_clusters,
                     features: selectedFeatures
                 })
             });
-            
+
             if (!res.ok) {
                 const err = await res.json();
                 throw new Error(err.error || 'Training failed');
             }
-            
+
             const result = await res.json();
-            
+
             varianceVal.innerText = (result.explained_variance * 100).toFixed(2);
             saveModelPanel.classList.remove('hidden');
             saveMsg.classList.add('hidden');
-            
+
             document.querySelector('[data-tab="results"]').click();
             renderClustersChart(result.x_pca, result.y_pca, result.labels);
-            if(result.z_pca && result.z_pca.length > 0) {
+            if (result.z_pca && result.z_pca.length > 0) {
                 render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels);
             }
-            
+
             buildPredictionForm(selectedFeatures);
-            
+
             const compPanel = document.getElementById('composition-panel');
             const compTbody = document.getElementById('composition-tbody');
             if (result.composition && result.composition.length > 0) {
                 compPanel.style.display = 'block';
                 compTbody.innerHTML = '';
-                
+
                 result.composition.forEach(comp => {
                     const tr = document.createElement('tr');
-                    
+
                     // Assign a color based on purity
                     let color = '#ef4444'; // red (low purity)
                     if (comp.purity >= 80) color = '#16a34a'; // green
                     else if (comp.purity >= 50) color = '#f59e0b'; // yellow
-                    
+
                     tr.innerHTML = `
                         <td><strong>Clúster ${comp.cluster}</strong></td>
                         <td>${comp.size}</td>
@@ -497,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 compPanel.style.display = 'none';
             }
-            
+
         } catch (error) {
             alert("Error: " + error.message);
         } finally {
@@ -505,40 +542,157 @@ document.addEventListener('DOMContentLoaded', () => {
             loader.classList.add('hidden');
         }
     });
-    
+
     btnSaveModel.addEventListener('click', async () => {
         const desc = document.getElementById('model-desc').value;
         btnSaveModel.disabled = true;
-        
+
         try {
             const res = await fetch('/api/save_model', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ description: desc })
             });
-            
+
             const result = await res.json();
             if (!res.ok) throw new Error(result.error);
-            
+
             saveMsg.innerHTML = result.message + " <br>Ruta: " + result.path;
             saveMsg.classList.remove('hidden');
-        } catch(e) {
+        } catch (e) {
             alert("Error al guardar: " + e.message);
         } finally {
             btnSaveModel.disabled = false;
         }
     });
 
+    // ── Load saved model ──────────────────────────────────────────────────
+    async function refreshModelList() {
+        const sel = document.getElementById('model-select');
+        try {
+            const res = await fetch('/api/list_models');
+            const models = await res.json();
+            sel.innerHTML = '<option value="">-- Selecciona un modelo --</option>';
+            if (models.length === 0) {
+                sel.innerHTML += '<option disabled>No hay modelos guardados aún</option>';
+                return;
+            }
+            models.forEach(m => {
+                const algo = m.metadata.algorithm || '';
+                const ts = m.metadata.timestamp ? m.metadata.timestamp.slice(0, 16).replace('T', ' ') : '';
+                const desc = m.metadata.description ? ` — ${m.metadata.description}` : '';
+                const opt = document.createElement('option');
+                opt.value = m.filename;
+                opt.textContent = `${m.filename}  (${algo.toUpperCase()} · ${ts}${desc})`;
+                sel.appendChild(opt);
+            });
+        } catch (e) {
+            console.error('Error listing models:', e);
+        }
+    }
+
+    document.getElementById('btn-refresh-models').addEventListener('click', refreshModelList);
+
+    document.getElementById('btn-load-model').addEventListener('click', async () => {
+        const filename = document.getElementById('model-select').value;
+        const msgEl = document.getElementById('load-model-msg');
+        if (!filename) { alert('Selecciona un modelo primero.'); return; }
+
+        const btn = document.getElementById('btn-load-model');
+        btn.disabled = true;
+        btn.textContent = 'Cargando...';
+        msgEl.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/load_model', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error);
+
+            msgEl.innerHTML = ` Modelo cargado: <strong>${filename}</strong>. Revisa la pestaña Resultados.`;
+            msgEl.classList.remove('hidden');
+
+            // Navigate to results tab and render
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector('[data-tab="results"]').classList.add('active');
+            document.getElementById('results').classList.add('active');
+
+            document.getElementById('variance-val').innerText = (result.explained_variance * 100).toFixed(1);
+            renderClustersChart(result.x_pca, result.y_pca, result.labels);
+            if (result.z_pca && result.z_pca.length > 0) render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels);
+            if (result.features) buildPredictionForm(result.features);
+
+            const compPanel = document.getElementById('composition-panel');
+            const compTbody = document.getElementById('composition-tbody');
+            if (result.composition && result.composition.length > 0) {
+                compPanel.style.display = 'block';
+                compTbody.innerHTML = '';
+
+                result.composition.forEach(comp => {
+                    const tr = document.createElement('tr');
+
+                    let color = '#ef4444';
+                    if (comp.purity >= 80) color = '#16a34a';
+                    else if (comp.purity >= 50) color = '#f59e0b';
+
+                    tr.innerHTML = `
+                        <td><strong>Clúster ${comp.cluster}</strong></td>
+                        <td>${comp.size}</td>
+                        <td>${comp.dominant_label} (de '${comp.eval_col}')</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span style="font-weight: 600; color: ${color};">${comp.purity}%</span>
+                                <div class="progress-bar-bg" style="flex: 1; height: 6px; background: var(--bg-alt); border-radius: 99px; overflow: hidden;">
+                                    <div class="progress-bar-fill" style="width: ${comp.purity}%; height: 100%; background: ${color}; border-radius: 99px;"></div>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    compTbody.appendChild(tr);
+                });
+            } else {
+                compPanel.style.display = 'none';
+            }
+        } catch (e) {
+            alert('Error al cargar el modelo: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg> Cargar Modelo`;
+        }
+    });
+
+    // ── Download results ────────────────────────────────────────────────────
+    const btnDownloadResults = document.getElementById('btn-download-results');
+    if (btnDownloadResults) {
+        btnDownloadResults.addEventListener('click', () => {
+            window.open('/api/download_results?format=csv', '_blank');
+        });
+    }
+
+    const btnDownloadResultsExcel = document.getElementById('btn-download-results-excel');
+    if (btnDownloadResultsExcel) {
+        btnDownloadResultsExcel.addEventListener('click', () => {
+            window.open('/api/download_results?format=excel', '_blank');
+        });
+    }
+
+    // Load model list on page load
+    refreshModelList();
+
     function renderClustersChart(x, y, labels) {
         const ctx = document.getElementById('chart-clusters').getContext('2d');
-        
+
         const datasets = {};
         const palette = [
             '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#db2777', '#0891b2', '#4f46e5',
             '#ca8a04', '#65a30d', '#059669', '#0284c7', '#c026d3', '#e11d48', '#ea580c', '#f59e0b',
             '#4ade80', '#2dd4bf', '#818cf8', '#a78bfa'
         ];
-        
+
         for (let i = 0; i < x.length; i++) {
             const label = labels[i];
             if (!datasets[label]) {
@@ -555,13 +709,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             datasets[label].data.push({ x: x[i], y: y[i] });
         }
-        
+
         const chartData = {
             datasets: Object.values(datasets)
         };
 
         if (clustersChart) clustersChart.destroy();
-        
+
         clustersChart = new Chart(ctx, {
             type: 'scatter',
             data: chartData,
@@ -571,7 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 plugins: {
                     legend: {
                         position: 'bottom',
-                        labels: { boxWidth: 10, usePointStyle: true, font: {size: 11} }
+                        labels: { boxWidth: 10, usePointStyle: true, font: { size: 11 } }
                     },
                     tooltip: {
                         callbacks: {
@@ -586,7 +740,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     function render3DChart(x, y, z, labels) {
         const trace = {
             x: x,
@@ -601,7 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             type: 'scatter3d'
         };
-        
+
         const layout = {
             margin: { l: 0, r: 0, b: 0, t: 0 },
             scene: {
@@ -610,21 +764,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 zaxis: { title: 'PCA 3' }
             }
         };
-        
-        Plotly.newPlot('chart-3d', [trace], layout, {responsive: true});
+
+        Plotly.newPlot('chart-3d', [trace], layout, { responsive: true });
     }
-    
+
     function buildPredictionForm(features) {
         const panel = document.getElementById('prediction-simulator-panel');
         const container = document.getElementById('prediction-form-container');
         const resDiv = document.getElementById('prediction-result');
         const btnPredict = document.getElementById('btn-predict-cluster');
-        
+
         panel.style.display = 'block';
         container.innerHTML = '';
         resDiv.innerHTML = '';
         resDiv.style.display = 'none';
-        
+
         features.forEach(f => {
             const div = document.createElement('div');
             div.className = 'pred-form-group';
@@ -634,28 +788,28 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             container.appendChild(div);
         });
-        
+
         // Remove old listeners to avoid multiple fires
         const newBtn = btnPredict.cloneNode(true);
         btnPredict.parentNode.replaceChild(newBtn, btnPredict);
-        
+
         newBtn.addEventListener('click', async () => {
             const inputs = document.querySelectorAll('.pred-input');
             const data = {};
             let valid = true;
             inputs.forEach(inp => {
-                if(inp.value === '') valid = false;
+                if (inp.value === '') valid = false;
                 data[inp.getAttribute('data-feature')] = parseFloat(inp.value);
             });
-            
-            if(!valid) {
+
+            if (!valid) {
                 alert('Por favor, llena todos los campos numéricos para hacer la predicción.');
                 return;
             }
-            
+
             newBtn.disabled = true;
             newBtn.innerText = 'Calculando...';
-            
+
             try {
                 const res = await fetch('/api/predict', {
                     method: 'POST',
@@ -663,9 +817,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify(data)
                 });
                 const result = await res.json();
-                
-                if(!res.ok) throw new Error(result.error);
-                
+
+                if (!res.ok) throw new Error(result.error);
+
                 resDiv.className = 'prediction-result success-result';
                 resDiv.style.display = 'flex';
                 resDiv.innerHTML = `
@@ -674,8 +828,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     </svg>
                     <div>Basado en tus respuestas, perteneces matemáticamente al <strong>Clúster ${result.cluster}</strong>.</div>
                 `;
-                
-            } catch(e) {
+
+            } catch (e) {
                 resDiv.className = 'prediction-result';
                 resDiv.style.display = 'flex';
                 resDiv.innerHTML = `Error: ${e.message}`;

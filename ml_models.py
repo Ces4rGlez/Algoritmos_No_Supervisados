@@ -85,5 +85,6 @@ class MBTIClusterModel:
         self.model = model_data['model']
         self.pca = model_data['pca']
         self.model_type = model_data['model_type']
+        self.features = model_data['metadata'].get('features', [])
         return model_data['metadata']
 
