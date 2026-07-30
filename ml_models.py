@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
 import joblib
 import json
 import os
@@ -14,6 +15,7 @@ class MBTIClusterModel:
         self.model_type = None
         self.pca = None
         self.features = []
+        self.silhouette = None
         
     def train(self, df, features, algorithm='kmeans', n_clusters=16):
         self.features = features
@@ -37,12 +39,22 @@ class MBTIClusterModel:
         # Calculate explained variance
         explained_variance = float(sum(self.pca.explained_variance_ratio_))
         
+        # Calculate silhouette score
+        if len(set(labels)) > 1:
+            try:
+                self.silhouette = float(silhouette_score(X, labels))
+            except:
+                self.silhouette = 0.0
+        else:
+            self.silhouette = 0.0
+            
         results = {
             'labels': labels.tolist(),
             'x_pca': X_pca[:, 0].tolist(),
             'y_pca': X_pca[:, 1].tolist() if n_comp > 1 else [0]*len(labels),
             'z_pca': X_pca[:, 2].tolist() if n_comp > 2 else [0]*len(labels),
             'explained_variance': explained_variance,
+            'silhouette': self.silhouette,
             'n_clusters': n_clusters,
             'algorithm': algorithm
         }
@@ -64,11 +76,13 @@ class MBTIClusterModel:
             'model': self.model,
             'pca': self.pca,
             'model_type': self.model_type,
+            'silhouette': self.silhouette,
             'metadata': {
                 'timestamp': datetime.datetime.now().isoformat(),
                 'description': description,
                 'algorithm': self.model_type,
-                'features': self.features
+                'features': self.features,
+                'silhouette': self.silhouette
             }
         }
         joblib.dump(model_data, filepath)
@@ -85,6 +99,7 @@ class MBTIClusterModel:
         self.model = model_data['model']
         self.pca = model_data['pca']
         self.model_type = model_data['model_type']
+        self.silhouette = model_data.get('silhouette', 0.0)
         self.features = model_data['metadata'].get('features', [])
         return model_data['metadata']
 
