@@ -192,8 +192,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Prioritize MBTI columns if they exist, otherwise select top 5
+        const mbtiCols = ['energia_score', 'percepcion_score', 'decision_score', 'estilo_score'];
+        const hasMbti = mbtiCols.every(c => num_cols.includes(c));
+        
         num_cols.forEach((col, idx) => {
-            const isChecked = idx < 5;
+            let isChecked = false;
+            if (hasMbti) {
+                isChecked = mbtiCols.includes(col);
+            } else if (idx < 5) {
+                isChecked = true;
+            }
+            
             const label = document.createElement('label');
             label.className = 'feature-checkbox';
             label.innerHTML = `
@@ -373,14 +383,28 @@ document.addEventListener('DOMContentLoaded', () => {
                     type: 'bar',
                     data: {
                         labels: labels,
-                        datasets: [{
-                            label: `Frecuencia (${colName})`,
-                            data: histData.counts,
-                            backgroundColor: 'rgba(37, 99, 235, 0.6)',
-                            borderColor: '#2563eb',
-                            borderWidth: 1,
-                            borderRadius: 4
-                        }]
+                        datasets: [
+                            {
+                                type: 'line',
+                                label: 'Tendencia',
+                                data: histData.counts,
+                                borderColor: '#ef4444',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                borderWidth: 2,
+                                tension: 0.4,
+                                fill: true,
+                                pointRadius: 0
+                            },
+                            {
+                                type: 'bar',
+                                label: `Frecuencia (${colName})`,
+                                data: histData.counts,
+                                backgroundColor: 'rgba(37, 99, 235, 0.6)',
+                                borderColor: '#2563eb',
+                                borderWidth: 1,
+                                borderRadius: 4
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,

@@ -271,7 +271,16 @@ def api_train():
         
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
         eval_col = None
-        if len(categorical_cols) > 0:
+        
+        # Priority 1: Specifically look for the personality type column
+        priority_names = ['tipo_resultante', 'tipo_mbti', 'personalidad', 'mbti']
+        for p in priority_names:
+            if p in categorical_cols:
+                eval_col = p
+                break
+                
+        # Priority 2: If no personality column is found, fallback to any text column with 2-50 unique categories
+        if not eval_col and len(categorical_cols) > 0:
             for col in categorical_cols:
                 if 2 <= df[col].nunique() <= 50:
                     eval_col = col
@@ -379,6 +388,44 @@ def api_load_model():
         'features': model.features,
         'metadata': metadata
     }
+    
+    # Calculate cluster composition
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    eval_col = None
+    priority_names = ['tipo_resultante', 'tipo_mbti', 'personalidad', 'mbti']
+    for p in priority_names:
+        if p in categorical_cols:
+            eval_col = p
+            break
+            
+    if not eval_col and len(categorical_cols) > 0:
+        for col in categorical_cols:
+            if 2 <= df[col].nunique() <= 50:
+                eval_col = col
+                break
+                
+    if eval_col:
+        composition = []
+        df_with_labels = df.copy()
+        df_with_labels['cluster'] = labels
+        unique_clusters = set(labels)
+        
+        for cluster_id in unique_clusters:
+            cluster_data = df_with_labels[df_with_labels['cluster'] == cluster_id]
+            if len(cluster_data) > 0:
+                dist = cluster_data[eval_col].value_counts(normalize=True)
+                top_label = dist.index[0]
+                purity = dist.iloc[0] * 100
+                
+                composition.append({
+                    'cluster': cluster_id,
+                    'size': len(cluster_data),
+                    'dominant_label': top_label,
+                    'purity': round(purity, 2),
+                    'eval_col': eval_col
+                })
+        composition.sort(key=lambda x: x['cluster'])
+        results['composition'] = composition
     
     if len(results['x_pca']) > 2000:
         indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
