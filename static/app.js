@@ -44,8 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 uploadStatus.style.color = '#16a34a';
                 uploadStatus.innerHTML = '¡Archivo subido exitosamente! Los datos se han actualizado.';
-                // Reload data to reflect new dataset
                 currentPage = 1;
+                // Clear old dynamic filters so they regenerate
+                document.getElementById('dynamic-filters-container').innerHTML = '';
                 loadData();
                 loadStats();
             } else {
@@ -58,72 +59,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
     // --- Dashboard Logic ---
     let currentPage = 1;
-    let mbtiChart = null;
-    let ageChart = null;
-    let meansChart = null;
     let histChart = null;
+    let dynamicCharts = []; // store instances of dynamic charts to destroy them later
 
     const btnApplyFilters = document.getElementById('btn-apply-filters');
     const btnPrevPage = document.getElementById('btn-prev-page');
     const btnNextPage = document.getElementById('btn-next-page');
     const btnFirstPage = document.getElementById('btn-first-page');
     const btnLastPage = document.getElementById('btn-last-page');
-    const btnDownload = document.getElementById('btn-download-data');
     let totalPages = 1;
 
-    btnApplyFilters.addEventListener('click', () => {
-        currentPage = 1;
-        loadData();
-        loadStats();
-    });
-    
-    const histColSelect = document.getElementById('hist-col-select');
-    if (histColSelect) {
-        histColSelect.addEventListener('change', () => {
+    if (btnApplyFilters) {
+        btnApplyFilters.addEventListener('click', () => {
+            currentPage = 1;
+            loadData();
             loadStats();
         });
     }
 
-    btnFirstPage.addEventListener('click', () => { if (currentPage > 1) { currentPage = 1; loadData(); } });
-    btnLastPage.addEventListener('click', () => { if (currentPage < totalPages) { currentPage = totalPages; loadData(); } });
+    if (btnFirstPage) btnFirstPage.addEventListener('click', () => { if (currentPage > 1) { currentPage = 1; loadData(); } });
+    if (btnLastPage) btnLastPage.addEventListener('click', () => { if (currentPage < totalPages) { currentPage = totalPages; loadData(); } });
+    if (btnPrevPage) btnPrevPage.addEventListener('click', () => { if (currentPage > 1) { currentPage--; loadData(); } });
+    if (btnNextPage) btnNextPage.addEventListener('click', () => { if (currentPage < totalPages) { currentPage++; loadData(); } });
 
-    btnPrevPage.addEventListener('click', () => {
-        if (currentPage > 1) { currentPage--; loadData(); }
-    });
-
-    btnNextPage.addEventListener('click', () => {
-        if (currentPage < totalPages) { currentPage++; loadData(); }
-    });
-
-    btnDownload.addEventListener('click', () => {
-        const genero = document.getElementById('filter-gender').value;
-        const edad = document.getElementById('filter-age').value;
-        const mbti = document.getElementById('filter-mbti').value;
-
-        let url = `/api/download?genero=${encodeURIComponent(genero)}&rango_edad=${encodeURIComponent(edad)}&tipo_mbti=${encodeURIComponent(mbti)}&format=csv`;
-        window.open(url, '_blank');
-    });
+    const btnDownload = document.getElementById('btn-download-data');
+    if (btnDownload) {
+        btnDownload.addEventListener('click', () => {
+            let url = `/api/download?${getFiltersParams()}&format=csv`;
+            window.open(url, '_blank');
+        });
+    }
 
     const btnDownloadExcel = document.getElementById('btn-download-excel');
     if (btnDownloadExcel) {
         btnDownloadExcel.addEventListener('click', () => {
-            const genero = document.getElementById('filter-gender').value;
-            const edad = document.getElementById('filter-age').value;
-            const mbti = document.getElementById('filter-mbti').value;
+            let url = `/api/download?${getFiltersParams()}&format=excel`;
+            window.open(url, '_blank');
+        });
+    }
 
-            let url = `/api/download?genero=${encodeURIComponent(genero)}&rango_edad=${encodeURIComponent(edad)}&tipo_mbti=${encodeURIComponent(mbti)}&format=excel`;
+    const btnDownloadPdf = document.getElementById('btn-download-pdf');
+    if (btnDownloadPdf) {
+        btnDownloadPdf.addEventListener('click', () => {
+            let url = `/api/report/pdf?${getFiltersParams()}`;
             window.open(url, '_blank');
         });
     }
 
     function getFiltersParams() {
-        const genero = document.getElementById('filter-gender').value;
-        const edad = document.getElementById('filter-age').value;
-        const mbti = document.getElementById('filter-mbti').value;
-        return `genero=${encodeURIComponent(genero)}&rango_edad=${encodeURIComponent(edad)}&tipo_mbti=${encodeURIComponent(mbti)}`;
+        const filters = [];
+        const selects = document.querySelectorAll('#dynamic-filters-container select');
+        selects.forEach(select => {
+            if (select.value && select.value !== 'Todos') {
+                filters.push(`${encodeURIComponent(select.name)}=${encodeURIComponent(select.value)}`);
+            }
+        });
+        return filters.join('&');
     }
 
     async function loadData() {
@@ -136,23 +129,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderTable(result.data, result.columns);
             updateFeaturesCheckboxes(result.numeric_columns);
+            renderDynamicFilters(result.filters_info);
 
-            document.getElementById('total-records').innerText = result.total;
-            document.getElementById('page-indicator').innerText = `Pág. ${result.page} / ${Math.ceil(result.total / result.per_page)}`;
+            const trObj = document.getElementById('total-records');
+            if (trObj) trObj.innerText = result.total;
+            const piObj = document.getElementById('page-indicator');
+            if (piObj) piObj.innerText = `Pág. ${result.page} / ${Math.ceil(result.total / result.per_page)}`;
+            
             totalPages = Math.ceil(result.total / result.per_page);
-
-            btnFirstPage.disabled = result.page === 1;
-            btnPrevPage.disabled = result.page === 1;
-            btnNextPage.disabled = result.page >= totalPages;
-            btnLastPage.disabled = result.page >= totalPages;
+            if (btnFirstPage) btnFirstPage.disabled = result.page === 1;
+            if (btnPrevPage) btnPrevPage.disabled = result.page === 1;
+            if (btnNextPage) btnNextPage.disabled = result.page >= totalPages;
+            if (btnLastPage) btnLastPage.disabled = result.page >= totalPages;
 
         } catch (error) {
             console.error("Error loading data:", error);
         }
     }
 
+    function renderDynamicFilters(filtersInfo) {
+        const container = document.getElementById('dynamic-filters-container');
+        if (!container) return;
+        
+        // Only generate filters if container is empty (don't overwrite user selections when filtering)
+        if (container.children.length > 0) return;
+        
+        for (const [colName, uniqueValues] of Object.entries(filtersInfo)) {
+            const group = document.createElement('div');
+            group.className = 'filter-group';
+            
+            const label = document.createElement('label');
+            label.innerText = colName;
+            
+            const select = document.createElement('select');
+            select.name = colName;
+            
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = 'Todos';
+            defaultOpt.innerText = 'Todos';
+            select.appendChild(defaultOpt);
+            
+            uniqueValues.forEach(val => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.innerText = val;
+                select.appendChild(opt);
+            });
+            
+            group.appendChild(label);
+            group.appendChild(select);
+            container.appendChild(group);
+        }
+    }
+
     function updateFeaturesCheckboxes(num_cols) {
         const container = document.getElementById('features-container');
+        if(!container) return;
         container.innerHTML = '';
 
         if (!num_cols || num_cols.length === 0) {
@@ -160,18 +192,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Prioritize MBTI columns if they exist, otherwise select top 4
-        const mbtiCols = ['energia_score', 'percepcion_score', 'decision_score', 'estilo_score'];
-        const hasMbti = mbtiCols.every(c => num_cols.includes(c));
-
         num_cols.forEach((col, idx) => {
-            let isChecked = false;
-            if (hasMbti) {
-                if (mbtiCols.includes(col)) isChecked = true;
-            } else if (idx < 5) {
-                isChecked = true;
-            }
-
+            const isChecked = idx < 5;
             const label = document.createElement('label');
             label.className = 'feature-checkbox';
             label.innerHTML = `
@@ -185,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderTable(data, columns) {
         const thead = document.getElementById('data-table-head');
         const tbody = document.getElementById('data-table-body');
+        if (!thead || !tbody) return;
 
         thead.innerHTML = '';
         tbody.innerHTML = '';
@@ -193,33 +216,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Header
         const trHead = document.createElement('tr');
-        columns.slice(0, 10).forEach(col => { // Show max 10 cols to avoid overflow chaos
+        columns.forEach(col => { 
             const th = document.createElement('th');
             th.innerText = col;
             trHead.appendChild(th);
         });
-        if (columns.length > 10) {
-            const th = document.createElement('th');
-            th.innerText = '...';
-            trHead.appendChild(th);
-        }
         thead.appendChild(trHead);
 
         // Body
         data.forEach(row => {
             const tr = document.createElement('tr');
-            columns.slice(0, 10).forEach(col => {
+            columns.forEach(col => {
                 const td = document.createElement('td');
                 let val = row[col];
                 if (typeof val === 'number') val = val.toFixed(2).replace('.00', '');
                 td.innerText = val !== null && val !== undefined ? val : '';
                 tr.appendChild(td);
             });
-            if (columns.length > 10) {
-                const td = document.createElement('td');
-                td.innerText = '...';
-                tr.appendChild(td);
-            }
             tbody.appendChild(tr);
         });
     }
@@ -227,223 +240,250 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadStats() {
         try {
             const params = getFiltersParams();
-            const histColSelect = document.getElementById('hist-col-select');
-            const histCol = histColSelect ? histColSelect.value : '';
-            
-            const res = await fetch(`/api/stats?${params}&hist_col=${histCol}&t=${new Date().getTime()}`);
+            const res = await fetch(`/api/stats?${params}&t=${new Date().getTime()}`);
             if (!res.ok) throw new Error('Network response was not ok');
             const stats = await res.json();
             
-            if (histColSelect && stats.numeric_cols) {
-                // Only populate if empty to avoid losing selection on every update
-                if (histColSelect.options.length === 0) {
-                    stats.numeric_cols.forEach(col => {
-                        const opt = document.createElement('option');
-                        opt.value = col;
-                        opt.textContent = col;
-                        histColSelect.appendChild(opt);
-                    });
-                }
-                if (stats.hist_col) {
-                    histColSelect.value = stats.hist_col;
-                }
-            }
-
-
-            renderKpiCards(stats.means, stats.stds);
-            renderMbtiChart(stats.tipo_dist);
-            renderAgeChart(stats.edad_dist);
-            renderMeansChart(stats.means);
-            if (stats.hist_data && stats.hist_col) {
-                renderHistChart(stats.hist_data, stats.hist_col);
-            }
+            renderKpiCards(stats.desc_stats);
+            renderDescriptiveStatsTable(stats.desc_stats);
+            renderInterpretations(stats.interpretations);
+            renderDynamicChartsGrid(stats);
+            
         } catch (error) {
             console.error("Error loading stats:", error);
         }
     }
 
-    function renderMbtiChart(tipoDist) {
-        const ctx = document.getElementById('chart-mbti').getContext('2d');
-        const labels = Object.keys(tipoDist);
-        const data = Object.values(tipoDist);
-
-        const colors = [
-            '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd',
-            '#1e40af', '#1e3a8a', '#475569', '#64748b',
-            '#0f172a', '#334155', '#94a3b8', '#cbd5e1',
-            '#16a34a', '#22c55e', '#4ade80', '#86efac'
-        ];
-
-        if (mbtiChart) mbtiChart.destroy();
-
-        Chart.defaults.color = '#64748b';
-        Chart.defaults.font.family = 'Inter';
-
-        mbtiChart = new Chart(ctx, {
-            type: 'pie',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: data,
-                    backgroundColor: colors,
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: { padding: { bottom: 8 } },
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            boxWidth: 10,
-                            boxHeight: 10,
-                            padding: 8,
-                            font: { size: 11 }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    function renderAgeChart(edadDist) {
-        const ctx = document.getElementById('chart-age').getContext('2d');
-        if (!edadDist || Object.keys(edadDist).length === 0) return;
-
-        const labels = Object.keys(edadDist);
-        const data = Object.values(edadDist);
-
-        const colors = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#14b8a6', '#84cc16'];
-
-        if (ageChart) ageChart.destroy();
-
-        ageChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: data,
-                    backgroundColor: colors,
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { boxWidth: 12, boxHeight: 12, padding: 10, font: { size: 11 } }
-                    }
-                }
-            }
-        });
-    }
-
-    function renderMeansChart(means) {
-        const ctx = document.getElementById('chart-means').getContext('2d');
-        const labels = Object.keys(means);
-        const data = Object.values(means);
-
-        if (meansChart) meansChart.destroy();
-
-        meansChart = new Chart(ctx, {
-            type: 'radar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Promedio Numérico',
-                    data: data,
-                    backgroundColor: 'rgba(37, 99, 235, 0.2)',
-                    borderColor: '#2563eb',
-                    pointBackgroundColor: '#2563eb',
-                    pointBorderColor: '#fff',
-                    pointHoverBackgroundColor: '#fff',
-                    pointHoverBorderColor: '#2563eb'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    r: {
-                        angleLines: { color: '#e2e8f0' },
-                        grid: { color: '#e2e8f0' },
-                        pointLabels: { font: { family: 'Inter', size: 11 }, color: '#64748b' },
-                        ticks: { backdropColor: 'transparent', color: '#64748b' }
-                    }
-                },
-                plugins: {
-                    legend: { display: false }
-                }
-            }
-        });
-    }
-
-    function renderKpiCards(means, stds) {
+    function renderKpiCards(descStats) {
         const container = document.getElementById('kpi-cards-container');
+        if (!container) return;
         container.innerHTML = '';
 
         let count = 0;
-        for (const [key, val] of Object.entries(means)) {
-            if (count >= 4) break;
-            const std = stds[key] || 0;
+        for (const [key, s] of Object.entries(descStats)) {
+            if (count >= 4) break; // Maximum of 4 KPI cards
             const card = document.createElement('div');
-            card.className = 'panel';
+            card.className = 'card'; // using card class for better styling matching existing UI
             card.style.padding = '1.5rem';
             card.style.display = 'flex';
             card.style.flexDirection = 'column';
+            card.style.justifyContent = 'center';
 
             card.innerHTML = `
-                <span style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">Promedio de ${key}</span>
-                <span style="font-size: 2rem; font-weight: 700; color: var(--primary); margin: 0.5rem 0;">${val.toFixed(2)}</span>
-                <span style="font-size: 0.85rem; color: #64748b;">Desviación Estándar: &plusmn;${std.toFixed(2)}</span>
+                <span style="color: #64748b; font-size: 0.85rem; font-weight: 600; text-transform: uppercase;">Promedio de ${key}</span>
+                <span style="font-size: 2rem; font-weight: 700; color: #2563eb; margin: 0.5rem 0;">${s.mean.toFixed(2)}</span>
+                <span style="font-size: 0.85rem; color: #64748b;">Desviación Est.: &plusmn;${s.std.toFixed(2)}</span>
             `;
             container.appendChild(card);
             count++;
         }
     }
 
-    function renderHistChart(histData, colName) {
-        document.getElementById('hist-title').innerText = `Histograma: ${colName}`;
-        const ctx = document.getElementById('chart-hist').getContext('2d');
+    function renderDescriptiveStatsTable(descStats) {
+        const tbody = document.getElementById('stats-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
 
-        // Build labels from bin edges
-        const labels = [];
-        for (let i = 0; i < histData.bins.length - 1; i++) {
-            labels.push(`${histData.bins[i].toFixed(1)} - ${histData.bins[i + 1].toFixed(1)}`);
+        for (const [colName, s] of Object.entries(descStats)) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-weight:600; text-align:left;">${colName}</td>
+                <td>${s.min.toFixed(2)}</td>
+                <td>${s.max.toFixed(2)}</td>
+                <td>${s.range.toFixed(2)}</td>
+                <td>${s.mean.toFixed(2)}</td>
+                <td>${s.median.toFixed(2)}</td>
+                <td>${s.std.toFixed(2)}</td>
+                <td>${(s.var !== undefined ? s.var : 0).toFixed(2)}</td>
+                <td>${s.skew.toFixed(2)}</td>
+                <td>${(s.kurtosis !== undefined ? s.kurtosis : 0).toFixed(2)}</td>
+            `;
+            tbody.appendChild(tr);
         }
+    }
 
-        if (histChart) histChart.destroy();
-
-        histChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Frecuencia',
-                    data: histData.counts,
-                    backgroundColor: 'rgba(37, 99, 235, 0.6)',
-                    borderColor: '#2563eb',
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { beginAtZero: true, grid: { color: '#e2e8f0' } }
-                }
-            }
+    function renderInterpretations(interpretations) {
+        const list = document.getElementById('interpretations-list');
+        if (!list) return;
+        list.innerHTML = '';
+        
+        interpretations.forEach(text => {
+            const li = document.createElement('li');
+            li.style.marginBottom = '0.5rem';
+            li.innerText = text;
+            list.appendChild(li);
         });
     }
+
+    function renderDynamicChartsGrid(stats) {
+        const grid = document.getElementById('dynamic-charts-grid');
+        if (!grid) return;
+        
+        // Destroy old charts
+        dynamicCharts.forEach(c => c.destroy());
+        dynamicCharts = [];
+        grid.innerHTML = '';
+
+        Chart.defaults.color = '#64748b';
+        Chart.defaults.font.family = 'Inter';
+        
+        const colors = [
+            '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd',
+            '#1e40af', '#1e3a8a', '#475569', '#64748b',
+            '#16a34a', '#22c55e', '#4ade80', '#86efac',
+            '#f59e0b', '#d97706', '#b45309', '#78350f'
+        ];
+
+        // 1. Render Histogram with Chip Selector (Space-saving but fast)
+        if (stats.hist_data_all && Object.keys(stats.hist_data_all).length > 0) {
+            const histCard = document.createElement('div');
+            histCard.className = 'card chart-card';
+            histCard.style.gridColumn = '1 / -1'; // span full width if needed, or let it flow
+            
+            // Create a container for the chips
+            const chipContainer = document.createElement('div');
+            chipContainer.style.display = 'flex';
+            chipContainer.style.gap = '0.5rem';
+            chipContainer.style.flexWrap = 'wrap';
+            chipContainer.style.marginBottom = '1rem';
+            
+            const canvasId = `dynamic-chart-hist-main`;
+            histCard.innerHTML = `
+                <div class="card-header" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+                    <h3>Distribución de Variables</h3>
+                    <div id="hist-chips" style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;"></div>
+                </div>
+                <div class="chart-wrap"><canvas id="${canvasId}"></canvas></div>
+            `;
+            grid.appendChild(histCard);
+            
+            const chipsDiv = histCard.querySelector('#hist-chips');
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            let mainHistChart = null;
+
+            const renderSingleHist = (colName, histData) => {
+                const labels = [];
+                for (let i = 0; i < histData.bins.length - 1; i++) {
+                    labels.push(`${histData.bins[i].toFixed(1)} - ${histData.bins[i + 1].toFixed(1)}`);
+                }
+                
+                if (mainHistChart) mainHistChart.destroy();
+                
+                mainHistChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: `Frecuencia (${colName})`,
+                            data: histData.counts,
+                            backgroundColor: 'rgba(37, 99, 235, 0.6)',
+                            borderColor: '#2563eb',
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { grid: { display: false } },
+                            y: { beginAtZero: true, grid: { color: '#e2e8f0' } }
+                        }
+                    }
+                });
+                
+                // Keep track to destroy later
+                if (!dynamicCharts.includes(mainHistChart)) {
+                    dynamicCharts.push(mainHistChart);
+                }
+            };
+
+            // Create buttons for each variable
+            let firstCol = null;
+            for (const [colName, histData] of Object.entries(stats.hist_data_all)) {
+                if (!firstCol) firstCol = { colName, histData };
+                
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-secondary';
+                btn.style.padding = '0.25rem 0.75rem';
+                btn.style.fontSize = '0.8rem';
+                btn.style.borderRadius = '99px';
+                btn.innerText = colName;
+                
+                btn.addEventListener('click', (e) => {
+                    // Remove active style from all
+                    Array.from(chipsDiv.children).forEach(c => {
+                        c.style.backgroundColor = 'var(--bg-alt)';
+                        c.style.color = 'var(--text-main)';
+                    });
+                    // Set active style for clicked
+                    btn.style.backgroundColor = 'var(--primary)';
+                    btn.style.color = '#fff';
+                    
+                    renderSingleHist(colName, histData);
+                });
+                
+                chipsDiv.appendChild(btn);
+            }
+            
+            // Render the first one by default
+            if (firstCol) {
+                chipsDiv.firstChild.style.backgroundColor = 'var(--primary)';
+                chipsDiv.firstChild.style.color = '#fff';
+                renderSingleHist(firstCol.colName, firstCol.histData);
+            }
+        }
+        
+        // 2. Render Pie Charts for Categorical Data
+        let chartIndex = 0;
+        for (const [colName, dist] of Object.entries(stats.cat_dist)) {
+            if (chartIndex >= 3) break; // limit to 3 categorical charts to avoid clutter
+            const card = document.createElement('div');
+            card.className = 'card chart-card';
+            const canvasId = `dynamic-chart-cat-${chartIndex}`;
+            card.innerHTML = `
+                <div class="card-header">
+                    <h3>Distribución: ${colName}</h3>
+                </div>
+                <div class="chart-wrap"><canvas id="${canvasId}"></canvas></div>
+            `;
+            grid.appendChild(card);
+            
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const c = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(dist),
+                    datasets: [{
+                        data: Object.values(dist),
+                        backgroundColor: colors,
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: { padding: { bottom: 8 } },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                boxWidth: 10,
+                                boxHeight: 10,
+                                padding: 8,
+                                font: { size: 11 }
+                            }
+                        }
+                    }
+                }
+            });
+            dynamicCharts.push(c);
+            chartIndex++;
+        }
+    }
+
 
     // --- Training Logic ---
     const btnTrain = document.getElementById('btn-train');
@@ -455,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let clustersChart = null;
 
-    btnTrain.addEventListener('click', async () => {
+    if (btnTrain) btnTrain.addEventListener('click', async () => {
         const algorithm = document.getElementById('algo-select').value;
         const n_clusters = document.getElementById('clusters-input').value;
 
@@ -511,8 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 result.composition.forEach(comp => {
                     const tr = document.createElement('tr');
 
-                    // Assign a color based on purity
-                    let color = '#ef4444'; // red (low purity)
+                    let color = '#ef4444'; // red
                     if (comp.purity >= 80) color = '#16a34a'; // green
                     else if (comp.purity >= 50) color = '#f59e0b'; // yellow
 
@@ -543,7 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    btnSaveModel.addEventListener('click', async () => {
+    if(btnSaveModel) btnSaveModel.addEventListener('click', async () => {
         const desc = document.getElementById('model-desc').value;
         btnSaveModel.disabled = true;
 
@@ -567,33 +606,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ── Load saved model ──────────────────────────────────────────────────
+    let savedModelsList = [];
+    
     async function refreshModelList() {
         const sel = document.getElementById('model-select');
+        const selCompA = document.getElementById('compare-model-a');
+        const selCompB = document.getElementById('compare-model-b');
+        
+        if (!sel) return;
         try {
             const res = await fetch('/api/list_models');
-            const models = await res.json();
-            sel.innerHTML = '<option value="">-- Selecciona un modelo --</option>';
-            if (models.length === 0) {
-                sel.innerHTML += '<option disabled>No hay modelos guardados aún</option>';
-                return;
-            }
-            models.forEach(m => {
-                const algo = m.metadata.algorithm || '';
-                const ts = m.metadata.timestamp ? m.metadata.timestamp.slice(0, 16).replace('T', ' ') : '';
-                const desc = m.metadata.description ? ` — ${m.metadata.description}` : '';
-                const opt = document.createElement('option');
-                opt.value = m.filename;
-                opt.textContent = `${m.filename}  (${algo.toUpperCase()} · ${ts}${desc})`;
-                sel.appendChild(opt);
-            });
+            savedModelsList = await res.json();
+            
+            const renderOptions = (selectElement) => {
+                if (!selectElement) return;
+                selectElement.innerHTML = '<option value="">-- Selecciona un modelo --</option>';
+                if (savedModelsList.length === 0) {
+                    selectElement.innerHTML += '<option disabled>No hay modelos guardados aún</option>';
+                    return;
+                }
+                savedModelsList.forEach(m => {
+                    const algo = m.metadata.algorithm || '';
+                    const ts = m.metadata.timestamp ? m.metadata.timestamp.slice(0, 16).replace('T', ' ') : '';
+                    const desc = m.metadata.description ? ` — ${m.metadata.description}` : '';
+                    const opt = document.createElement('option');
+                    opt.value = m.filename;
+                    opt.textContent = `${m.filename}  (${algo.toUpperCase()} · ${ts}${desc})`;
+                    selectElement.appendChild(opt);
+                });
+            };
+            
+            renderOptions(sel);
+            renderOptions(selCompA);
+            renderOptions(selCompB);
+            
         } catch (e) {
             console.error('Error listing models:', e);
         }
     }
 
-    document.getElementById('btn-refresh-models').addEventListener('click', refreshModelList);
+    const btnRefresh = document.getElementById('btn-refresh-models');
+    if (btnRefresh) btnRefresh.addEventListener('click', refreshModelList);
 
-    document.getElementById('btn-load-model').addEventListener('click', async () => {
+    const btnLoad = document.getElementById('btn-load-model');
+    if (btnLoad) btnLoad.addEventListener('click', async () => {
         const filename = document.getElementById('model-select').value;
         const msgEl = document.getElementById('load-model-msg');
         if (!filename) { alert('Selecciona un modelo primero.'); return; }
@@ -615,7 +671,6 @@ document.addEventListener('DOMContentLoaded', () => {
             msgEl.innerHTML = ` Modelo cargado: <strong>${filename}</strong>. Revisa la pestaña Resultados.`;
             msgEl.classList.remove('hidden');
 
-            // Navigate to results tab and render
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector('[data-tab="results"]').classList.add('active');
@@ -634,7 +689,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 result.composition.forEach(comp => {
                     const tr = document.createElement('tr');
-
                     let color = '#ef4444';
                     if (comp.purity >= 80) color = '#16a34a';
                     else if (comp.purity >= 50) color = '#f59e0b';
@@ -665,6 +719,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const btnDownloadModel = document.getElementById('btn-download-model');
+    if (btnDownloadModel) {
+        btnDownloadModel.addEventListener('click', () => {
+            const filename = document.getElementById('model-select').value;
+            if (!filename) { alert('Selecciona un modelo primero.'); return; }
+            window.open(`/api/download_model?filename=${encodeURIComponent(filename)}`, '_blank');
+        });
+    }
+
     // ── Download results ────────────────────────────────────────────────────
     const btnDownloadResults = document.getElementById('btn-download-results');
     if (btnDownloadResults) {
@@ -677,6 +740,78 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnDownloadResultsExcel) {
         btnDownloadResultsExcel.addEventListener('click', () => {
             window.open('/api/download_results?format=excel', '_blank');
+        });
+    }
+
+    // ── Comparison Logic ────────────────────────────────────────────────────
+    const btnRunComparison = document.getElementById('btn-run-comparison');
+    if (btnRunComparison) {
+        btnRunComparison.addEventListener('click', () => {
+            const valA = document.getElementById('compare-model-a').value;
+            const valB = document.getElementById('compare-model-b').value;
+            
+            if (!valA || !valB) {
+                alert('Por favor selecciona ambos modelos (A y B) para comparar.');
+                return;
+            }
+            if (valA === valB) {
+                alert('Selecciona modelos diferentes para hacer una comparación útil.');
+                return;
+            }
+            
+            const modelA = savedModelsList.find(m => m.filename === valA);
+            const modelB = savedModelsList.find(m => m.filename === valB);
+            
+            if (!modelA || !modelB) return;
+            
+            document.getElementById('comparison-results').classList.remove('hidden');
+            
+            const tbody = document.getElementById('comparison-tbody');
+            tbody.innerHTML = '';
+            
+            const metrics = [
+                { label: 'Algoritmo', key: 'algorithm', format: val => (val || '').toUpperCase() },
+                { label: 'Fecha de Entrenamiento', key: 'timestamp', format: val => val ? val.slice(0, 16).replace('T', ' ') : 'N/A' },
+                { label: 'Descripción', key: 'description', format: val => val || 'Sin descripción' },
+                { label: 'Características (Features)', key: 'features', format: val => val ? val.join(', ') : 'N/A' }
+            ];
+            
+            // Render textual metadata
+            metrics.forEach(m => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="font-weight: 600;">${m.label}</td>
+                    <td>${m.format(modelA.metadata[m.key])}</td>
+                    <td>${m.format(modelB.metadata[m.key])}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            // Render Silhouette Score and visually indicate the winner
+            let silA = modelA.metadata.silhouette;
+            let silB = modelB.metadata.silhouette;
+            
+            silA = (silA !== undefined && silA !== null) ? parseFloat(silA) : null;
+            silB = (silB !== undefined && silB !== null) ? parseFloat(silB) : null;
+            
+            const silAText = silA !== null ? silA.toFixed(4) : 'N/A (Modelo Antiguo)';
+            const silBText = silB !== null ? silB.toFixed(4) : 'N/A (Modelo Antiguo)';
+            
+            let silAStyle = '';
+            let silBStyle = '';
+            
+            if (silA !== null && silB !== null) {
+                if (silA > silB) silAStyle = 'font-weight: bold; color: #16a34a; background-color: #f0fdf4; border-radius: 4px; padding: 2px 6px;';
+                else if (silB > silA) silBStyle = 'font-weight: bold; color: #16a34a; background-color: #f0fdf4; border-radius: 4px; padding: 2px 6px;';
+            }
+            
+            const trSil = document.createElement('tr');
+            trSil.innerHTML = `
+                <td style="font-weight: 600; font-size: 1.1em;">Puntuación de Silueta <br><small style="font-weight: normal; font-size: 0.8em; color: var(--text-muted);">(Más cerca de 1 es mejor)</small></td>
+                <td><span style="${silAStyle}">${silAText}</span></td>
+                <td><span style="${silBStyle}">${silBText}</span></td>
+            `;
+            tbody.appendChild(trSil);
         });
     }
 
@@ -742,6 +877,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function render3DChart(x, y, z, labels) {
+        if(typeof Plotly === 'undefined') return;
+        
         const trace = {
             x: x,
             y: y,
@@ -773,6 +910,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.getElementById('prediction-form-container');
         const resDiv = document.getElementById('prediction-result');
         const btnPredict = document.getElementById('btn-predict-cluster');
+        
+        if(!panel || !container || !btnPredict) return;
 
         panel.style.display = 'block';
         container.innerHTML = '';

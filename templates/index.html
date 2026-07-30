@@ -33,7 +33,7 @@
                         <path
                             d="M2 10a8 8 0 1116 0A8 8 0 012 10zm8-3a1 1 0 00-1 1v2a1 1 0 001 1h2a1 1 0 000-2h-1V8a1 1 0 00-1-1z" />
                     </svg>
-                    Dashboard
+                    Información Estadística
                 </button>
                 <button class="tab-btn" data-tab="training">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
@@ -50,6 +50,12 @@
                     </svg>
                     Resultados
                 </button>
+                <button class="tab-btn" data-tab="comparison">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" />
+                    </svg>
+                    Comparación
+                </button>
             </nav>
 
             <div class="topbar-meta">
@@ -64,8 +70,8 @@
             <section id="dashboard" class="tab-content active">
                 <div class="page-header">
                     <div>
-                        <h1>Dashboard Analítico</h1>
-                        <p>Gestiona, visualiza y filtra los datos disponibles para el análisis.</p>
+                        <h1>Información Estadística</h1>
+                        <p>Apartado de información estadística con datos en bruto, gráficos y descriptivos.</p>
                     </div>
                 </div>
 
@@ -94,46 +100,8 @@
 
                 <!-- Filters -->
                 <div class="card filters-card">
-                    <div class="filter-group">
-                        <label for="filter-gender">Género</label>
-                        <select id="filter-gender">
-                            <option value="Todos">Todos</option>
-                            <option value="Masculino">Masculino</option>
-                            <option value="Femenino">Femenino</option>
-                            <option value="Otro">Otro</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="filter-age">Rango de Edad</label>
-                        <select id="filter-age">
-                            <option value="Todos">Todos</option>
-                            <option value="18-22">18-22</option>
-                            <option value="23-27">23-27</option>
-                            <option value="28-32">28-32</option>
-                            <option value="33+">33+</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="filter-mbti">Tipo MBTI</label>
-                        <select id="filter-mbti">
-                            <option value="Todos">Todos</option>
-                            <option value="INTJ">INTJ</option>
-                            <option value="INTP">INTP</option>
-                            <option value="ENTJ">ENTJ</option>
-                            <option value="ENTP">ENTP</option>
-                            <option value="INFJ">INFJ</option>
-                            <option value="INFP">INFP</option>
-                            <option value="ENFJ">ENFJ</option>
-                            <option value="ENFP">ENFP</option>
-                            <option value="ISTJ">ISTJ</option>
-                            <option value="ISFJ">ISFJ</option>
-                            <option value="ESTJ">ESTJ</option>
-                            <option value="ESFJ">ESFJ</option>
-                            <option value="ISTP">ISTP</option>
-                            <option value="ISFP">ISFP</option>
-                            <option value="ESTP">ESTP</option>
-                            <option value="ESFP">ESFP</option>
-                        </select>
+                    <div id="dynamic-filters-container" style="display:flex; flex-wrap:wrap; gap:1rem; width:100%;">
+                        <!-- Dynamic filters will be injected here by app.js -->
                     </div>
                     <div class="filter-actions">
                         <button id="btn-apply-filters" class="btn primary">
@@ -156,58 +124,80 @@
                             </svg>
                             Exportar Excel
                         </button>
+                        <button id="btn-download-pdf" class="btn primary" style="background:#dc2626; border-color:#dc2626;">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                            Exportar Reporte PDF
+                        </button>
                     </div>
                 </div>
 
                 <!-- KPI Cards (populated by JS) -->
                 <div id="kpi-cards-container" class="kpi-grid"></div>
 
-                <!-- Charts Grid -->
-                <div class="charts-grid">
-                    <div class="card chart-card">
-                        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-                            <h3 id="hist-title">Histograma</h3>
-                            <select id="hist-col-select" class="filter-select" style="max-width: 150px; font-size: 0.8rem; padding: 0.2rem 0.5rem;"></select>
-                        </div>
-                        <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
-                    </div>
-                    <div class="card chart-card">
-                        <div class="card-header">
-                            <h3>Distribución MBTI</h3>
-                        </div>
-                        <div class="chart-wrap"><canvas id="chart-mbti"></canvas></div>
-                    </div>
-                    <div class="card chart-card">
-                        <div class="card-header">
-                            <h3>Distribución por Edad</h3>
-                        </div>
-                        <div class="chart-wrap"><canvas id="chart-age"></canvas></div>
-                    </div>
-                    <div class="card chart-card">
-                        <div class="card-header">
-                            <h3>Promedios por Dimensión</h3>
-                        </div>
-                        <div class="chart-wrap"><canvas id="chart-means"></canvas></div>
-                    </div>
-                </div>
 
-                <!-- Data Table -->
-                <div class="card">
+
+                <!-- Charts Grid -->
+                <div class="charts-grid" id="dynamic-charts-grid">
+                    <!-- Dynamic charts injected here -->
+                </div>
+                
+                <!-- Data Table (Raw Data) -->
+                <div class="card" style="margin-top: 1.25rem;">
                     <div class="card-header">
-                        <h3>Registros del Dataset <span class="chip-count" id="total-records">0</span></h3>
+                        <h3>Datos en Bruto (Raw Data) <span class="chip-count" id="total-records">0</span></h3>
                     </div>
+                    <p class="text-muted" style="margin-bottom:1rem;">Muestra los registros del dataset.</p>
                     <div class="table-wrapper">
-                        <table id="data-table">
+                        <table id="data-table" class="data-table">
                             <thead id="data-table-head"></thead>
                             <tbody id="data-table-body"></tbody>
                         </table>
                     </div>
-                    <div class="pagination">
-                        <button id="btn-first-page" class="btn-page" title="Primera página">««</button>
-                        <button id="btn-prev-page" class="btn-page">‹ Anterior</button>
-                        <span id="page-indicator">Página 1</span>
-                        <button id="btn-next-page" class="btn-page">Siguiente ›</button>
-                        <button id="btn-last-page" class="btn-page" title="Última página">»»</button>
+                    <div class="pagination" style="margin-top:1rem;">
+                        <button id="btn-first-page" class="btn secondary" disabled>&laquo;</button>
+                        <button id="btn-prev-page" class="btn secondary" disabled>&lsaquo;</button>
+                        <span id="page-indicator" style="font-size: 0.9rem; font-weight: 500;">Pág. 1 / 1</span>
+                        <button id="btn-next-page" class="btn secondary" disabled>&rsaquo;</button>
+                        <button id="btn-last-page" class="btn secondary" disabled>&raquo;</button>
+                    </div>
+                </div>
+
+                <!-- Descriptive Statistics Table -->
+                <div class="card" style="margin-top: 1.25rem;">
+                    <div class="card-header">
+                        <h3>Estadística Descriptiva</h3>
+                    </div>
+                    
+                    <div class="callout callout-info" id="interpretations-container" style="margin-bottom: 1rem;">
+                        <div class="callout-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" /></svg>
+                        </div>
+                        <div class="callout-body">
+                            <h4>Interpretación Automática</h4>
+                            <ul id="interpretations-list" style="margin-top:0.5rem; padding-left:1.5rem;"></ul>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table id="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>Variable</th>
+                                    <th>Mínimo</th>
+                                    <th>Máximo</th>
+                                    <th>Rango</th>
+                                    <th>Media</th>
+                                    <th>Mediana</th>
+                                    <th>Desv. Est.</th>
+                                    <th>Varianza</th>
+                                    <th>Asimetría</th>
+                                    <th>Curtosis</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-table-body"></tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -242,6 +232,10 @@
                         <button id="btn-load-model" class="btn primary">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
                             Cargar Modelo
+                        </button>
+                        <button id="btn-download-model" class="btn secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                            Descargar Archivo
                         </button>
                     </div>
                     <p id="load-model-msg" class="success-msg hidden"></p>
@@ -426,6 +420,62 @@
                 </div>
             </section>
 
+            <!-- Comparison Tab -->
+            <section id="comparison" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Comparador de Modelos</h2>
+                    </div>
+                    <p class="text-muted" style="margin-bottom: 1rem;">Selecciona dos modelos previamente guardados para comparar su rendimiento objetivamente utilizando métricas matemáticas (Puntuación de Silueta).</p>
+                    
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="compare-model-a">Modelo A:</label>
+                            <select id="compare-model-a">
+                                <option value="">-- Selecciona un modelo --</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="compare-model-b">Modelo B:</label>
+                            <select id="compare-model-b">
+                                <option value="">-- Selecciona un modelo --</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <button id="btn-run-comparison" class="btn primary" style="margin-bottom: 2rem;">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z" /></svg>
+                        Ejecutar Comparación
+                    </button>
+                    
+                    <div id="comparison-results" class="hidden">
+                        <div class="table-wrapper">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Métrica / Atributo</th>
+                                        <th id="col-model-a" style="width: 35%; color: var(--primary);">Modelo A</th>
+                                        <th id="col-model-b" style="width: 35%; color: #8b5cf6;">Modelo B</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="comparison-tbody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="callout callout-info" style="margin-top: 1.5rem;">
+                            <div class="callout-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" /></svg>
+                            </div>
+                            <div class="callout-body">
+                                <h4>Guía de Interpretación</h4>
+                                <p><strong>Silhouette Score:</strong> Evalúa la calidad matemática de los clústeres. Varía de -1 a 1. Valores cercanos a 1 indican que los grupos están muy bien definidos y separados. Valores cercanos a 0 indican que los grupos se superponen o están muy juntos.</p>
+                                <p><strong>Varianza Explicada:</strong> Indica cuánta información del conjunto de datos original se logró retener en el gráfico de 2D o 3D. Valores más altos (cercanos al 100%) significan gráficas más precisas.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 

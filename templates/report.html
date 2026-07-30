@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reporte Estadístico</title>
+    <style>
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 12px; color: #333; }
+        h1 { color: #2563eb; text-align: center; font-size: 24px; border-bottom: 2px solid #2563eb; padding-bottom: 10px; }
+        h2 { color: #1e40af; font-size: 18px; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
+        th { background-color: #f8fafc; font-weight: bold; text-align: center; }
+        .feature-name { text-align: left; font-weight: bold; }
+        .footer { text-align: center; margin-top: 30px; font-size: 10px; color: #64748b; }
+        .summary-box { background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <h1>Reporte de Análisis Exploratorio de Datos (EDA)</h1>
+    
+    <div class="summary-box">
+        <p><strong>Fecha de Generación:</strong> {{ date }}</p>
+        <p><strong>Total de Registros Analizados:</strong> {{ total_records }}</p>
+        <p>Este reporte ha sido generado automáticamente por DataInsights basándose en el conjunto de datos actual y los filtros aplicados.</p>
+    </div>
+
+    <h2>Estadística Descriptiva (Variables Numéricas)</h2>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Variable</th>
+                <th>Mínimo</th>
+                <th>Máximo</th>
+                <th>Media</th>
+                <th>Mediana</th>
+                <th>Desv. Estándar</th>
+                <th>Asimetría</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for col in numeric_cols %}
+            <tr>
+                <td class="feature-name">{{ col }}</td>
+                <td>{{ desc_stats[col].min }}</td>
+                <td>{{ desc_stats[col].max }}</td>
+                <td>{{ desc_stats[col].mean }}</td>
+                <td>{{ desc_stats[col].median }}</td>
+                <td>{{ desc_stats[col].std }}</td>
+                <td>{{ desc_stats[col].skew }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        Generado por DataInsights — ML Analytics | Inteligencia Artificial Aplicada
+    </div>
+
+</body>
+</html>

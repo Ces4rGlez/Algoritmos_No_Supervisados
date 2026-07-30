@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, make_response
 import pandas as pd
 import numpy as np
 import os
@@ -7,6 +7,7 @@ import io
 import datetime
 import json
 from werkzeug.utils import secure_filename
+from xhtml2pdf import pisa
 
 app = Flask(__name__)
 app.config['MODEL_DIR'] = 'models'
@@ -17,10 +18,17 @@ for folder in [app.config['MODEL_DIR'], app.config['UPLOAD_FOLDER']]:
         os.makedirs(folder)
 
 def get_data():
-    uploaded_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
-    if os.path.exists(uploaded_path):
+    csv_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
+    xlsx_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.xlsx')
+    
+    if os.path.exists(xlsx_path):
         try:
-            return pd.read_csv(uploaded_path)
+            return pd.read_excel(xlsx_path)
+        except:
+            pass
+    if os.path.exists(csv_path):
+        try:
+            return pd.read_csv(csv_path)
         except:
             pass
             
@@ -31,6 +39,16 @@ def get_data():
     if not os.path.exists(data_path):
         return pd.DataFrame()
     return pd.read_csv(data_path)
+
+def apply_dynamic_filters(df, args):
+    if df.empty:
+        return df
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    for col in categorical_cols:
+        val = args.get(col)
+        if val and val != 'Todos' and col in df.columns:
+            df = df[df[col] == val]
+    return df
 
 @app.route('/')
 def index():
@@ -44,12 +62,19 @@ def api_upload():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
         
-    if file and file.filename.endswith('.csv'):
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
+    if file and (file.filename.endswith('.csv') or file.filename.endswith('.xlsx')):
+        # Remove old files
+        for old in ['uploaded_dataset.csv', 'uploaded_dataset.xlsx']:
+            old_path = os.path.join(app.config['UPLOAD_FOLDER'], old)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+                
+        ext = '.csv' if file.filename.endswith('.csv') else '.xlsx'
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f'uploaded_dataset{ext}')
         file.save(filepath)
         return jsonify({'message': 'File successfully uploaded.'})
     else:
-        return jsonify({'error': 'Invalid file format. Only CSV allowed.'}), 400
+        return jsonify({'error': 'Invalid file format. Only CSV or XLSX allowed.'}), 400
 
 @app.route('/api/data', methods=['GET'])
 def api_data():
@@ -57,17 +82,7 @@ def api_data():
     if df.empty:
         return jsonify({'error': 'No data found'}), 404
         
-    # Generic Filters (we will just apply if the columns exist)
-    genero = request.args.get('genero')
-    rango_edad = request.args.get('rango_edad')
-    tipo_mbti = request.args.get('tipo_mbti')
-    
-    if genero and genero != 'Todos' and 'genero' in df.columns:
-        df = df[df['genero'] == genero]
-    if rango_edad and rango_edad != 'Todos' and 'rango_edad' in df.columns:
-        df = df[df['rango_edad'] == rango_edad]
-    if tipo_mbti and tipo_mbti != 'Todos' and 'tipo_resultante' in df.columns:
-        df = df[df['tipo_resultante'] == tipo_mbti]
+    df = apply_dynamic_filters(df, request.args)
         
     # Pagination
     page = int(request.args.get('page', 1))
@@ -82,13 +97,20 @@ def api_data():
     data = df.iloc[start:end].to_dict(orient='records')
     columns = list(df.columns)
     
-    # Identify numeric columns for training selection
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    # Provide unique values for filters (max 20 unique values)
+    filters_info = {}
+    for col in categorical_cols:
+        if 2 <= df[col].nunique() <= 20:
+            filters_info[col] = df[col].dropna().unique().tolist()
     
     return jsonify({
         'data': data,
         'columns': columns,
         'numeric_columns': numeric_cols,
+        'filters_info': filters_info,
         'total': total_records,
         'page': page,
         'per_page': per_page
@@ -100,101 +122,125 @@ def api_stats():
     if df.empty:
         return jsonify({'error': 'No data found'}), 404
         
-    # Apply Filters
-    genero = request.args.get('genero')
-    rango_edad = request.args.get('rango_edad')
-    tipo_mbti = request.args.get('tipo_mbti')
-    
-    if genero and genero != 'Todos' and 'genero' in df.columns:
-        df = df[df['genero'] == genero]
-    if rango_edad and rango_edad != 'Todos' and 'rango_edad' in df.columns:
-        df = df[df['rango_edad'] == rango_edad]
-    if tipo_mbti and tipo_mbti != 'Todos' and 'tipo_resultante' in df.columns:
-        df = df[df['tipo_resultante'] == tipo_mbti]
+    df = apply_dynamic_filters(df, request.args)
         
     if df.empty:
-        # Prevent errors when stats are empty
         return jsonify({
             'total_records': 0,
-            'tipo_dist': {},
-            'edad_dist': {},
-            'means': {},
-            'stds': {},
+            'cat_dist': {},
+            'desc_stats': {},
             'hist_data': {},
-            'hist_col': None
+            'hist_col': None,
+            'numeric_cols': [],
+            'interpretations': []
         })
         
     stats = {
         'total_records': len(df),
-        'tipo_dist': {},
-        'edad_dist': {},
-        'means': {},
-        'stds': {},
-        'mins': {},
-        'maxs': {},
+        'cat_dist': {},
+        'desc_stats': {},
         'hist_data': {},
-        'hist_col': None
+        'hist_col': None,
+        'numeric_cols': [],
+        'interpretations': []
     }
     
-    # Generic Categorical Stats (Try to find interesting categorical columns)
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     
-    if 'tipo_resultante' in categorical_cols:
-        stats['tipo_dist'] = df['tipo_resultante'].value_counts().head(16).to_dict()
-    
-    if 'rango_edad' in categorical_cols:
-        stats['edad_dist'] = df['rango_edad'].value_counts().head(10).to_dict()
-        
-    # If standard columns don't exist, just grab the first two categorical columns
-    if not stats['tipo_dist'] and len(categorical_cols) > 0:
-        for col in categorical_cols:
-            if 2 <= df[col].nunique() <= 20:
-                stats['tipo_dist'] = df[col].value_counts().to_dict()
-                break
-    
-    if not stats['edad_dist'] and len(categorical_cols) > 1:
-        for col in categorical_cols:
-            if 2 <= df[col].nunique() <= 20 and col != 'tipo_resultante' and not stats['tipo_dist'].keys() == df[col].value_counts().keys():
-                stats['edad_dist'] = df[col].value_counts().to_dict()
-                break
+    # Distributions for categorical charts
+    for col in categorical_cols:
+        if 2 <= df[col].nunique() <= 20:
+            stats['cat_dist'][col] = df[col].value_counts().to_dict()
                 
-    # Generic Numeric Stats
+    # Descriptive Statistics for numeric columns
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    stats['numeric_cols'] = numeric_cols
     
-    # Prioritize MBTI columns if they exist
-    mbti_cols = ['energia_score', 'percepcion_score', 'decision_score', 'estilo_score']
-    
-    target_cols = []
-    if all(c in numeric_cols for c in mbti_cols):
-        target_cols = mbti_cols
-    else:
-        target_cols = numeric_cols[:4]
+    for c in numeric_cols:
+        s = df[c].dropna()
+        if len(s) == 0: continue
         
-    for c in target_cols:
-        label = c.replace('_score', '').capitalize()
-        stats['means'][label] = float(df[c].mean())
-        stats['stds'][label] = float(df[c].std())
-        stats['mins'][label] = float(df[c].min())
-        stats['maxs'][label] = float(df[c].max())
+        c_min = float(s.min())
+        c_max = float(s.max())
+        c_mean = float(s.mean())
+        c_std = float(s.std()) if len(s) > 1 else 0.0
         
-    # Histogram data
-    if len(numeric_cols) > 0:
-        hist_col_req = request.args.get('hist_col', '')
-        if hist_col_req and hist_col_req in numeric_cols:
-            hist_col = hist_col_req
-        else:
-            hist_col = numeric_cols[0]
-            
-        stats['hist_col'] = hist_col
-        stats['numeric_cols'] = numeric_cols
-        # Calculate bins
-        hist, bin_edges = np.histogram(df[hist_col].dropna(), bins=15)
-        stats['hist_data'] = {
-            'counts': hist.tolist(),
-            'bins': bin_edges.tolist()
+        stats['desc_stats'][c] = {
+            'min': c_min,
+            'max': c_max,
+            'range': c_max - c_min,
+            'mean': c_mean,
+            'median': float(s.median()),
+            'std': c_std,
+            'var': float(s.var()) if len(s) > 1 else 0.0,
+            'skew': float(s.skew()) if len(s) > 2 else 0.0,
+            'kurtosis': float(s.kurtosis()) if len(s) > 3 else 0.0
         }
+        
+        # Simple Interpretation rules
+        skew = stats['desc_stats'][c]['skew']
+        if skew > 1:
+            stats['interpretations'].append(f"La variable '{c}' tiene una asimetría positiva alta (sesgada a la derecha).")
+        elif skew < -1:
+            stats['interpretations'].append(f"La variable '{c}' tiene una asimetría negativa alta (sesgada a la izquierda).")
+            
+        if c_std > c_mean and c_mean > 0:
+            stats['interpretations'].append(f"La variable '{c}' presenta una alta dispersión (Desviación Estándar mayor que la Media).")
+            
+    # Histogram data for ALL numerical columns
+    stats['hist_data_all'] = {}
+    for col in numeric_cols:
+        s_hist = df[col].dropna()
+        if len(s_hist) > 0:
+            hist, bin_edges = np.histogram(s_hist, bins=15)
+            stats['hist_data_all'][col] = {
+                'counts': hist.tolist(),
+                'bins': bin_edges.tolist()
+            }
+            
+    if not stats['interpretations']:
+        stats['interpretations'].append("Las variables numéricas muestran una distribución relativamente normal y simétrica.")
             
     return jsonify(stats)
+
+@app.route('/api/report/pdf', methods=['GET'])
+def api_report_pdf():
+    df = get_data()
+    if df.empty:
+        return "No data available", 404
+        
+    df = apply_dynamic_filters(df, request.args)
+    
+    # Compute stats for the report
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    desc_stats = {}
+    for c in numeric_cols:
+        s = df[c].dropna()
+        if len(s) == 0: continue
+        desc_stats[c] = {
+            'min': round(float(s.min()), 2),
+            'max': round(float(s.max()), 2),
+            'mean': round(float(s.mean()), 2),
+            'median': round(float(s.median()), 2),
+            'std': round(float(s.std()), 2),
+            'skew': round(float(s.skew()), 2) if len(s) > 2 else 0.0
+        }
+        
+    html = render_template('report.html', 
+                           total_records=len(df),
+                           desc_stats=desc_stats,
+                           numeric_cols=numeric_cols,
+                           date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                           
+    result = io.BytesIO()
+    pdf = pisa.pisaDocument(io.BytesIO(html.encode("utf-8")), result)
+    if not pdf.err:
+        response = make_response(result.getvalue())
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = 'attachment; filename=reporte_estadistico.pdf'
+        return response
+    else:
+        return "Error creating PDF", 500
 
 @app.route('/api/train', methods=['POST'])
 def api_train():
@@ -208,33 +254,24 @@ def api_train():
         return jsonify({'error': 'No data to train on'}), 404
         
     if not features:
-        # Fallback to MBTI or all numeric
-        mbti_cols = ['energia_score', 'percepcion_score', 'decision_score', 'estilo_score']
-        if all(c in df.columns for c in mbti_cols):
-            features = mbti_cols
-        else:
-            features = df.select_dtypes(include=[np.number]).columns.tolist()
+        features = df.select_dtypes(include=[np.number]).columns.tolist()
             
-    # Check if features exist
     for f in features:
         if f not in df.columns:
             return jsonify({'error': f'Feature {f} not found in dataset'}), 400
             
     model = MBTIClusterModel()
     try:
-        # Impute missing values for ML
         df_ml = df[features].fillna(df[features].mean())
-        
         results = model.train(df_ml, features, algorithm=algorithm, n_clusters=n_clusters)
         
         app.config['CURRENT_MODEL'] = model
         app.config['LAST_LABELS'] = results['labels']
         app.config['LAST_FEATURES'] = features
         
-        # Calculate cluster composition if a categorical column exists (like tipo_resultante)
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-        eval_col = 'tipo_resultante' if 'tipo_resultante' in categorical_cols else None
-        if not eval_col and len(categorical_cols) > 0:
+        eval_col = None
+        if len(categorical_cols) > 0:
             for col in categorical_cols:
                 if 2 <= df[col].nunique() <= 50:
                     eval_col = col
@@ -261,7 +298,6 @@ def api_train():
                     })
             results['composition'] = composition
 
-        # Sample for visualization if too big
         if len(results['x_pca']) > 2000:
             indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
             results['x_pca'] = [results['x_pca'][i] for i in indices]
@@ -292,7 +328,6 @@ def api_save_model():
 
 @app.route('/api/load_model', methods=['POST'])
 def api_load_model():
-    """Load a previously saved .pkl model file from the server models/ directory."""
     data = request.json
     filename = data.get('filename')
 
@@ -311,11 +346,10 @@ def api_load_model():
 
     app.config['CURRENT_MODEL'] = model
 
-    # Re-run predictions on current dataset to rebuild PCA visualisation
     df = get_data()
     if df.empty or not model.features:
         return jsonify({
-            'message': 'Model loaded (no dataset available for visualisation)',
+            'message': 'Model loaded',
             'metadata': metadata,
             'features': model.features
         })
@@ -327,9 +361,8 @@ def api_load_model():
         }), 400
 
     df_ml = df[model.features].fillna(df[model.features].mean())
-    X = df_ml.values
-    labels = model.model.predict(df_ml).tolist()
     X_pca = model.pca.transform(df_ml)
+    labels = model.model.predict(df_ml).tolist()
     n_comp = X_pca.shape[1]
 
     app.config['LAST_LABELS'] = labels
@@ -346,41 +379,7 @@ def api_load_model():
         'features': model.features,
         'metadata': metadata
     }
-
-    # Calculate cluster composition
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-    eval_col = 'tipo_resultante' if 'tipo_resultante' in categorical_cols else None
-    if not eval_col and len(categorical_cols) > 0:
-        for col in categorical_cols:
-            if 2 <= df[col].nunique() <= 50:
-                eval_col = col
-                break
-                
-    if eval_col:
-        composition = []
-        df_with_labels = df.copy()
-        df_with_labels['cluster'] = labels
-        unique_clusters = set(labels)
-        
-        for cluster_id in unique_clusters:
-            cluster_data = df_with_labels[df_with_labels['cluster'] == cluster_id]
-            if len(cluster_data) > 0:
-                dist = cluster_data[eval_col].value_counts(normalize=True)
-                top_label = dist.index[0]
-                purity = dist.iloc[0] * 100
-                
-                composition.append({
-                    'cluster': cluster_id,
-                    'size': len(cluster_data),
-                    'dominant_label': top_label,
-                    'purity': round(purity, 2),
-                    'eval_col': eval_col
-                })
-        # Sort by cluster id
-        composition.sort(key=lambda x: x['cluster'])
-        results['composition'] = composition
-
-    # Sample for viz if large
+    
     if len(results['x_pca']) > 2000:
         indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
         results['x_pca']  = [results['x_pca'][i]  for i in indices]
@@ -389,10 +388,8 @@ def api_load_model():
 
     return jsonify(results)
 
-
 @app.route('/api/list_models', methods=['GET'])
 def api_list_models():
-    """Return the list of saved .pkl model files."""
     model_dir = app.config['MODEL_DIR']
     files = []
     for f in os.listdir(model_dir):
@@ -406,18 +403,15 @@ def api_list_models():
     files.sort(key=lambda x: x['filename'], reverse=True)
     return jsonify(files)
 
-
 @app.route('/api/download_results', methods=['GET'])
 def api_download_results():
-    """Download the current dataset with cluster labels appended."""
     if 'LAST_LABELS' not in app.config:
-        return jsonify({'error': 'No clustering results available. Train or load a model first.'}), 400
+        return jsonify({'error': 'No clustering results available.'}), 400
 
     df = get_data()
     labels = app.config['LAST_LABELS']
 
     if len(labels) != len(df):
-        # Labels are from a sampled subset — just attach what we have
         df_out = df.copy().reset_index(drop=True)
         label_series = pd.Series(labels + [None] * (len(df_out) - len(labels)))
         df_out.insert(0, 'cluster', label_series)
@@ -432,13 +426,7 @@ def api_download_results():
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_out.to_excel(writer, index=False, sheet_name='Resultados')
         output.seek(0)
-        
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name='resultados_clusters.xlsx'
-        )
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='resultados_clusters.xlsx')
     else:
         output = io.StringIO()
         df_out.to_csv(output, index=False)
@@ -446,19 +434,11 @@ def api_download_results():
         mem = io.BytesIO()
         mem.write(output.getvalue().encode('utf-8'))
         mem.seek(0)
-
-        return send_file(
-            mem,
-            mimetype='text/csv',
-            as_attachment=True,
-            download_name='resultados_clusters.csv'
-        )
-
+        return send_file(mem, mimetype='text/csv', as_attachment=True, download_name='resultados_clusters.csv')
 
 @app.route('/api/predict', methods=['POST'])
 def api_predict():
     data = request.json
-    
     if 'CURRENT_MODEL' not in app.config:
         return jsonify({'error': 'No model has been trained yet.'}), 400
         
@@ -468,7 +448,6 @@ def api_predict():
     if not features:
         return jsonify({'error': 'Model has no features configured.'}), 400
         
-    # Build dataframe for the single row
     row_data = {}
     for f in features:
         if f not in data:
@@ -486,17 +465,7 @@ def api_predict():
 @app.route('/api/download', methods=['GET'])
 def api_download():
     df = get_data()
-    
-    genero = request.args.get('genero')
-    rango_edad = request.args.get('rango_edad')
-    tipo_mbti = request.args.get('tipo_mbti')
-    
-    if genero and genero != 'Todos' and 'genero' in df.columns:
-        df = df[df['genero'] == genero]
-    if rango_edad and rango_edad != 'Todos' and 'rango_edad' in df.columns:
-        df = df[df['rango_edad'] == rango_edad]
-    if tipo_mbti and tipo_mbti != 'Todos' and 'tipo_resultante' in df.columns:
-        df = df[df['tipo_resultante'] == tipo_mbti]
+    df = apply_dynamic_filters(df, request.args)
         
     export_format = request.args.get('format', 'csv')
     
@@ -505,28 +474,27 @@ def api_download():
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Datos')
         output.seek(0)
-        
-        return send_file(
-            output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name='datos_exportados.xlsx'
-        )
+        return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='datos_exportados.xlsx')
     else:
         output = io.StringIO()
         df.to_csv(output, index=False)
         output.seek(0)
-        
         mem = io.BytesIO()
         mem.write(output.getvalue().encode('utf-8'))
         mem.seek(0)
+        return send_file(mem, mimetype='text/csv', as_attachment=True, download_name='datos_exportados.csv')
+
+@app.route('/api/download_model', methods=['GET'])
+def api_download_model():
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
         
-        return send_file(
-            mem,
-            mimetype='text/csv',
-            as_attachment=True,
-            download_name='datos_exportados.csv'
-        )
+    filepath = os.path.join(app.config['MODEL_DIR'], filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Model file not found'}), 404
+        
+    return send_file(filepath, as_attachment=True, download_name=filename)
 
 if __name__ == '__main__':
     app.run(debug=True, host='127.0.0.1', port=5000)
