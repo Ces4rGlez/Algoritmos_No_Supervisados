@@ -56,6 +56,12 @@
                     </svg>
                     Comparación
                 </button>
+                <button class="tab-btn" data-tab="history">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                    </svg>
+                    Historial
+                </button>
             </nav>
 
             <div class="topbar-meta">
@@ -95,6 +101,12 @@
                         </div>
                         <input type="file" id="file-input" accept=".csv">
                     </label>
+                    <div style="margin-top: 1rem; display: flex; gap: 1rem;">
+                        <button id="btn-load-internal" class="btn secondary">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 9.5A3.5 3.5 0 005.5 13H9v2.586l-1.293-1.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 15.586V13h2.5a4.5 4.5 0 10-.616-8.958 4.002 4.002 0 10-7.753 1.977A3.5 3.5 0 002 9.5zm9 3.5H9V8a1 1 0 012 0v5z" clip-rule="evenodd" /></svg>
+                            Cargar Dataset Interno
+                        </button>
+                    </div>
                     <p id="upload-status" class="success-msg hidden"></p>
                 </div>
 
@@ -285,7 +297,6 @@
                 <div id="save-model-panel" class="card hidden">
                     <div class="card-header">
                         <h3 style="color: #059669;"> Modelo Entrenado Exitosamente</h3>
-                        <span class="variance-badge">Varianza PCA 2D: <strong id="variance-val">0</strong>%</span>
                     </div>
                     <div class="form-group">
                         <label for="model-desc">Descripción / Metadatos</label>
@@ -347,8 +358,12 @@
 
                 <!-- Charts -->
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                         <h3>Dispersión de Clústeres (PCA 2D)</h3>
+                        <div style="display: flex; gap: 1rem;">
+                            <span class="variance-badge">Varianza PCA 2D: <strong id="variance-val">0</strong>%</span>
+                            <span class="variance-badge" style="background:#f3e8ff; color:#7e22ce; border:1px solid #d8b4fe;">Silhouette Score: <strong id="silhouette-val">N/A</strong></span>
+                        </div>
                     </div>
                     <div class="result-chart-wrap">
                         <canvas id="chart-clusters"></canvas>
@@ -394,6 +409,25 @@
                         </button>
                     </div>
                     <div id="prediction-result" class="prediction-result"></div>
+                </div>
+
+                <!-- Cluster Descriptions -->
+                <div class="card" id="cluster-descriptions-panel" style="display: none;">
+                    <div class="card-header">
+                        <h3>Perfil y Descripción Estadística de Clústeres</h3>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table" id="cluster-stats-table">
+                            <thead>
+                                <tr id="cluster-stats-head">
+                                    <!-- Dynamic headers -->
+                                </tr>
+                            </thead>
+                            <tbody id="cluster-stats-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 <!-- Cluster Composition -->
@@ -476,10 +510,41 @@
                     </div>
                 </div>
             </section>
+
+            <!-- ──────────── TAB 5: History ──────────── -->
+            <section id="history" class="tab-content">
+                <div class="page-header">
+                    <div>
+                        <h1>Historial de Entrenamientos</h1>
+                        <p>Registro de todos los modelos generados y guardados en el sistema.</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Modelos Históricos</h3>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table" id="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha y Hora</th>
+                                    <th>Algoritmo</th>
+                                    <th>Silhouette Score</th>
+                                    <th>Características Usadas</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
-    <script src="{{ url_for('static', filename='app.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
 </body>
 
 </html>
