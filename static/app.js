@@ -3,16 +3,47 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
+    function renderHistory(historyList) {
+        const tbody = document.getElementById('history-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        
+        if (!historyList || historyList.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay modelos guardados.</td></tr>';
+            return;
+        }
+        
+        historyList.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.timestamp || 'Desconocido'}</td>
+                <td><span class="chip">${item.algorithm.toUpperCase()} (k=${item.n_clusters || '?'})</span></td>
+                <td>${item.silhouette ? parseFloat(item.silhouette).toFixed(3) : 'N/A'}</td>
+                <td><div style="display:flex; flex-wrap:wrap; gap:0.25rem;">${item.features.map(f => `<span class="chip" style="font-size:0.7rem; padding:0.1rem 0.4rem;">${f}</span>`).join('')}</div></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
     tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             tabBtns.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(t => t.classList.remove('active'));
-
+            tabContents.forEach(c => c.classList.remove('active'));
             btn.classList.add('active');
-            const targetTab = btn.getAttribute('data-tab');
-            document.getElementById(targetTab).classList.add('active');
+            const targetId = btn.getAttribute('data-tab');
+            document.getElementById(targetId).classList.add('active');
 
-            if (targetTab === 'dashboard') {
+            if (targetId === 'comparison') {
+                loadComparisonModels();
+            } else if (targetId === 'history') {
+                try {
+                    const res = await fetch('/api/history');
+                    const json = await res.json();
+                    renderHistory(json.history);
+                } catch (e) {
+                    console.error('Error loading history:', e);
+                }
+            } else if (targetId === 'dashboard') {
                 loadData();
                 loadStats();
             }
@@ -72,10 +103,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let totalPages = 1;
 
     if (btnApplyFilters) {
-        btnApplyFilters.addEventListener('click', () => {
+        btnApplyFilters.addEventListener('click', async () => {
+            const originalText = btnApplyFilters.innerHTML;
+            btnApplyFilters.innerHTML = '<span class="spinner" style="width:16px;height:16px;margin-right:8px;border-color:white;border-right-color:transparent;display:inline-block"></span> Filtrando...';
+            btnApplyFilters.disabled = true;
+            
             currentPage = 1;
-            loadData();
-            loadStats();
+            await Promise.all([loadData(), loadStats()]);
+            
+            btnApplyFilters.innerHTML = originalText;
+            btnApplyFilters.disabled = false;
         });
     }
 
@@ -108,6 +145,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const btnLoadInternal = document.getElementById('btn-load-internal');
+    if (btnLoadInternal) {
+        btnLoadInternal.addEventListener('click', async () => {
+            btnLoadInternal.disabled = true;
+            try {
+                const res = await fetch('/api/load_internal', { method: 'POST' });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || 'Error cargando dataset');
+                
+                const status = document.getElementById('upload-status');
+                status.innerText = json.message;
+                status.classList.remove('hidden');
+                setTimeout(() => status.classList.add('hidden'), 5000);
+                
+                currentPage = 1;
+                loadData();
+                loadStats();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                btnLoadInternal.disabled = false;
+            }
+        });
+    }
+
     function getFiltersParams() {
         const filters = [];
         const selects = document.querySelectorAll('#dynamic-filters-container select');
@@ -124,6 +186,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const params = getFiltersParams();
             const url = `/api/data?page=${currentPage}&per_page=20&${params}&t=${new Date().getTime()}`;
             const res = await fetch(url);
+            
+            if (res.status === 404) {
+                renderTable([], []);
+                updateFeaturesCheckboxes([]);
+                const trObj = document.getElementById('total-records');
+                if (trObj) trObj.innerText = 0;
+                return;
+            }
+            
             if (!res.ok) throw new Error('Network response was not ok');
             const result = await res.json();
 
@@ -241,6 +312,20 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const params = getFiltersParams();
             const res = await fetch(`/api/stats?${params}&t=${new Date().getTime()}`);
+            
+            if (res.status === 404) {
+                renderKpiCards({});
+                renderDescriptiveStatsTable({});
+                renderInterpretations([]);
+                if (dynamicCharts.length) {
+                    dynamicCharts.forEach(c => c.destroy());
+                    dynamicCharts = [];
+                }
+                const chartContainer = document.getElementById('dynamic-charts-grid');
+                if (chartContainer) chartContainer.innerHTML = '<p style="color:#64748b; margin-top:1rem;">Sube un dataset para ver las gráficas.</p>';
+                return;
+            }
+            
             if (!res.ok) throw new Error('Network response was not ok');
             const stats = await res.json();
             
@@ -531,6 +616,50 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
 
             varianceVal.innerText = (result.explained_variance * 100).toFixed(2);
+            
+            const silhouetteVal = document.getElementById('silhouette-val');
+            if (silhouetteVal) {
+                silhouetteVal.innerText = result.silhouette_score ? result.silhouette_score.toFixed(3) : 'N/A';
+            }
+
+            // Muestra descripciones de clusters y tabla estadística
+            const clusterDescriptionsPanel = document.getElementById('cluster-descriptions-panel');
+            const clusterStatsHead = document.getElementById('cluster-stats-head');
+            const clusterStatsBody = document.getElementById('cluster-stats-body');
+            
+            if (clusterDescriptionsPanel && clusterStatsHead && clusterStatsBody && result.cluster_descriptions && result.cluster_stats) {
+                // Generar cabeceras
+                clusterStatsHead.innerHTML = '<th>Clúster</th>';
+                result.features.forEach(f => {
+                    clusterStatsHead.innerHTML += `<th>${f}</th>`;
+                });
+                clusterStatsHead.innerHTML += '<th style="width: 30%">Descripción Heurística</th>';
+                
+                // Generar cuerpo
+                clusterStatsBody.innerHTML = '';
+                for (const clusterName of Object.keys(result.cluster_stats)) {
+                    const stats = result.cluster_stats[clusterName];
+                    const description = result.cluster_descriptions[clusterName] || 'N/A';
+                    
+                    const tr = document.createElement('tr');
+                    let rowHtml = `<td><strong>${clusterName}</strong></td>`;
+                    
+                    result.features.forEach(f => {
+                        let val = stats[f];
+                        if (typeof val === 'number') val = val.toFixed(2);
+                        rowHtml += `<td>${val}</td>`;
+                    });
+                    
+                    rowHtml += `<td><em>${description}</em></td>`;
+                    tr.innerHTML = rowHtml;
+                    clusterStatsBody.appendChild(tr);
+                }
+                
+                clusterDescriptionsPanel.style.display = 'block';
+            } else if (clusterDescriptionsPanel) {
+                clusterDescriptionsPanel.style.display = 'none';
+            }
+
             saveModelPanel.classList.remove('hidden');
             saveMsg.classList.add('hidden');
 

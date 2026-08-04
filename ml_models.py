@@ -19,6 +19,7 @@ class MBTIClusterModel:
         
     def train(self, df, features, algorithm='kmeans', n_clusters=16):
         self.features = features
+        self.n_clusters = n_clusters
         X = df[features]
         self.model_type = algorithm
         
@@ -81,6 +82,7 @@ class MBTIClusterModel:
                 'timestamp': datetime.datetime.now().isoformat(),
                 'description': description,
                 'algorithm': self.model_type,
+                'n_clusters': getattr(self, 'n_clusters', 0),
                 'features': self.features,
                 'silhouette': self.silhouette
             }

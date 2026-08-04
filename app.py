@@ -17,6 +17,19 @@ for folder in [app.config['MODEL_DIR'], app.config['UPLOAD_FOLDER']]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
+# Clean uploads folder on startup
+for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    try:
+        if os.path.isfile(file_path):
+            os.unlink(file_path)
+    except Exception as e:
+        print(f"Error clearing upload folder: {e}")
+
+DATA_DIR = 'data'
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
 def get_data():
     csv_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
     xlsx_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.xlsx')
@@ -32,13 +45,7 @@ def get_data():
         except:
             pass
             
-    # Fallback to generated data
-    data_path = 'datos_mbti_10k.csv'
-    if not os.path.exists(data_path):
-        data_path = '../Cuestionario MBTI - Hoja 1.csv'
-    if not os.path.exists(data_path):
-        return pd.DataFrame()
-    return pd.read_csv(data_path)
+    return pd.DataFrame()
 
 def apply_dynamic_filters(df, args):
     if df.empty:
@@ -75,6 +82,27 @@ def api_upload():
         return jsonify({'message': 'File successfully uploaded.'})
     else:
         return jsonify({'error': 'Invalid file format. Only CSV or XLSX allowed.'}), 400
+
+@app.route('/api/load_internal', methods=['POST'])
+def api_load_internal():
+    internal_file = os.path.join('data', 'dataset_interno.csv')
+    if not os.path.exists(internal_file):
+        return jsonify({'error': 'No se encontró dataset_interno.csv en la carpeta data/'}), 404
+        
+    try:
+        # Copy file to uploads as uploaded_dataset.csv
+        import shutil
+        dest = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
+        shutil.copy(internal_file, dest)
+        
+        # Remove any lingering xlsx
+        xlsx_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.xlsx')
+        if os.path.exists(xlsx_path):
+            os.remove(xlsx_path)
+            
+        return jsonify({'message': 'Dataset interno cargado exitosamente.'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/data', methods=['GET'])
 def api_data():
@@ -298,15 +326,93 @@ def api_train():
                     })
             results['composition'] = composition
 
+        # Generar descripción estadística por clúster (solo numéricas)
+        cluster_descriptions = {}
+        cluster_stats = {}
+        df_ml_labels = df_ml.copy()
+        df_ml_labels['cluster'] = results['labels']
+        
+        for c_id in range(n_clusters):
+            c_data = df_ml_labels[df_ml_labels['cluster'] == c_id][features]
+            if len(c_data) > 0:
+                means = c_data.mean()
+                overall_means = df_ml[features].mean()
+                
+                # Store numeric stats
+                cluster_stats[f"Clúster {c_id}"] = means.to_dict()
+                
+                desc = []
+                deviations = []
+                for f in features:
+                    if overall_means[f] != 0:
+                        pct_diff = ((means[f] - overall_means[f]) / overall_means[f]) * 100
+                        deviations.append((f, pct_diff))
+                
+                # Ordenar por magnitud de la desviación (las más extremas primero)
+                deviations.sort(key=lambda x: abs(x[1]), reverse=True)
+                
+                altos = []
+                bajos = []
+                
+                for f, pct in deviations:
+                    if pct > 15:
+                        altos.append(f"{f} (+{pct:.1f}%)")
+                    elif pct < -15:
+                        bajos.append(f"{f} ({pct:.1f}%)")
+                        
+                if altos and bajos:
+                    desc_text = f"Perfil fuertemente definido por picos en {', '.join(altos)}; mientras que carece de {', '.join(bajos)}."
+                elif altos:
+                    desc_text = f"Grupo caracterizado exclusivamente por dominio superior al promedio en {', '.join(altos)}."
+                elif bajos:
+                    desc_text = f"Clúster que se agrupa por tener déficit o niveles muy inferiores en {', '.join(bajos)}."
+                else:
+                    desc_text = "Perfil neutro o muy cercano al promedio global de la población. No destaca por extremos."
+                
+                cluster_descriptions[f"Clúster {c_id}"] = desc_text
+            else:
+                cluster_descriptions[f"Clúster {c_id}"] = "Clúster vacío sin datos representativos."
+                cluster_stats[f"Clúster {c_id}"] = {f: 0 for f in features}
+
         if len(results['x_pca']) > 2000:
             indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
             results['x_pca'] = [results['x_pca'][i] for i in indices]
             results['y_pca'] = [results['y_pca'][i] for i in indices]
             results['labels'] = [results['labels'][i] for i in indices]
-            
+
+        # Añadir al diccionario original de results
+        results['message'] = 'Model trained successfully.'
+        results['algorithm'] = algorithm
+        results['n_clusters'] = n_clusters
+        results['features'] = features
+        results['silhouette_score'] = results.get('silhouette', None)
+        results['cluster_descriptions'] = cluster_descriptions
+        results['cluster_stats'] = cluster_stats
+        
         return jsonify(results)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/history', methods=['GET'])
+def api_history():
+    models_dir = app.config['MODEL_DIR']
+    history = []
+    
+    if os.path.exists(models_dir):
+        for f in os.listdir(models_dir):
+            if f.endswith('.meta.json'):
+                try:
+                    with open(os.path.join(models_dir, f), 'r') as file:
+                        meta = json.load(file)
+                        history.append(meta)
+                except:
+                    pass
+                    
+    # Sort by timestamp descending
+    history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return jsonify({'history': history})
 
 @app.route('/api/save_model', methods=['POST'])
 def api_save_model():
