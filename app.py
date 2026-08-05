@@ -9,28 +9,37 @@ import json
 from werkzeug.utils import secure_filename
 from xhtml2pdf import pisa
 
+# ─── Configuración inicial de la aplicación Flask ───────────────────────────
 app = Flask(__name__)
-app.config['MODEL_DIR'] = 'models'
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MODEL_DIR'] = 'models'         # Carpeta donde se guardan los modelos .pkl
+app.config['UPLOAD_FOLDER'] = 'uploads'    # Carpeta donde se guarda el dataset subido por el usuario
 
+# Crear las carpetas necesarias si aún no existen
 for folder in [app.config['MODEL_DIR'], app.config['UPLOAD_FOLDER']]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-# Clean uploads folder on startup
+# Limpiar la carpeta de uploads cada vez que el servidor arranca.
+# Esto garantiza que el usuario siempre empiece desde cero y elija su propio dataset.
 for filename in os.listdir(app.config['UPLOAD_FOLDER']):
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     try:
         if os.path.isfile(file_path):
             os.unlink(file_path)
     except Exception as e:
-        print(f"Error clearing upload folder: {e}")
+        print(f"Error al limpiar la carpeta de uploads: {e}")
 
+# Carpeta donde se puede colocar un dataset interno por defecto
 DATA_DIR = 'data'
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
 def get_data():
+    """
+    Función auxiliar que busca y carga el dataset activo en memoria.
+    Primero busca un archivo Excel (.xlsx), si no existe busca un CSV.
+    Retorna un DataFrame vacío si no hay ningún archivo subido.
+    """
     csv_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
     xlsx_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.xlsx')
     
@@ -48,6 +57,10 @@ def get_data():
     return pd.DataFrame()
 
 def apply_dynamic_filters(df, args):
+    """
+    Aplica los filtros que el usuario seleccionó en la interfaz.
+    Filtra el DataFrame por columnas de texto (categorías). Si el valor es 'Todos', no filtra.
+    """
     if df.empty:
         return df
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
@@ -59,10 +72,17 @@ def apply_dynamic_filters(df, args):
 
 @app.route('/')
 def index():
+    """
+    Ruta principal. Renderiza y devuelve la página HTML (index.html) al navegador del usuario.
+    """
     return render_template('index.html')
 
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
+    """
+    Recibe un archivo (CSV o Excel) subido por el usuario desde la web.
+    Borra cualquier dataset anterior y guarda el nuevo en la carpeta 'uploads/'.
+    """
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     file = request.files['file']
@@ -70,7 +90,7 @@ def api_upload():
         return jsonify({'error': 'No selected file'}), 400
         
     if file and (file.filename.endswith('.csv') or file.filename.endswith('.xlsx')):
-        # Remove old files
+        # Borrar el dataset anterior para no acumular archivos
         for old in ['uploaded_dataset.csv', 'uploaded_dataset.xlsx']:
             old_path = os.path.join(app.config['UPLOAD_FOLDER'], old)
             if os.path.exists(old_path):
@@ -79,23 +99,27 @@ def api_upload():
         ext = '.csv' if file.filename.endswith('.csv') else '.xlsx'
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], f'uploaded_dataset{ext}')
         file.save(filepath)
-        return jsonify({'message': 'File successfully uploaded.'})
+        return jsonify({'message': '¡Archivo subido exitosamente!'})
     else:
-        return jsonify({'error': 'Invalid file format. Only CSV or XLSX allowed.'}), 400
+        return jsonify({'error': 'Formato inválido. Solo se permiten archivos CSV o XLSX.'}), 400
 
 @app.route('/api/load_internal', methods=['POST'])
 def api_load_internal():
+    """
+    Carga el dataset 'dataset_interno.csv' por defecto (el de 10,000 registros).
+    Lo copia a la carpeta de 'uploads/' para que la aplicación lo use como base de datos activa.
+    """
     internal_file = os.path.join('data', 'dataset_interno.csv')
     if not os.path.exists(internal_file):
         return jsonify({'error': 'No se encontró dataset_interno.csv en la carpeta data/'}), 404
         
     try:
-        # Copy file to uploads as uploaded_dataset.csv
         import shutil
+        # Copiar el dataset interno a la carpeta de uploads para activarlo
         dest = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.csv')
         shutil.copy(internal_file, dest)
         
-        # Remove any lingering xlsx
+        # Borrar cualquier Excel que haya quedado rezagado de una sesión anterior
         xlsx_path = os.path.join(app.config['UPLOAD_FOLDER'], 'uploaded_dataset.xlsx')
         if os.path.exists(xlsx_path):
             os.remove(xlsx_path)
@@ -106,13 +130,17 @@ def api_load_internal():
 
 @app.route('/api/data', methods=['GET'])
 def api_data():
+    """
+    Sirve para mandar los datos del dataset en formato tabla (paginado) hacia la página web.
+    También aplica filtros dinámicos si el usuario selecciona algo en la interfaz.
+    """
     df = get_data()
     if df.empty:
         return jsonify({'error': 'No data found'}), 404
         
     df = apply_dynamic_filters(df, request.args)
         
-    # Pagination
+    # Paginación: se mandan los datos en bloques (páginas) para no saturar el navegador
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 50))
     total_records = len(df)
@@ -120,15 +148,16 @@ def api_data():
     start = (page - 1) * per_page
     end = start + per_page
     
-    # Fill NaN values so jsonify doesn't fail
+    # Reemplazar valores vacíos (NaN) para que la respuesta JSON no tenga errores
     df = df.fillna('')
     data = df.iloc[start:end].to_dict(orient='records')
     columns = list(df.columns)
     
+    # Separar columnas numéricas (para el modelo) y categóricas (para los filtros)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     
-    # Provide unique values for filters (max 20 unique values)
+    # Recopilar los valores únicos de cada columna categórica para generar los desplegables del filtro
     filters_info = {}
     for col in categorical_cols:
         if 2 <= df[col].nunique() <= 20:
@@ -146,6 +175,11 @@ def api_data():
 
 @app.route('/api/stats', methods=['GET'])
 def api_stats():
+    """
+    Calcula y devuelve todas las estadísticas descriptivas del dataset activo:
+    distribuciones, histogramas, media, mediana, desviación estándar, etc.
+    También genera interpretaciones automáticas en texto.
+    """
     df = get_data()
     if df.empty:
         return jsonify({'error': 'No data found'}), 404
@@ -165,22 +199,22 @@ def api_stats():
         
     stats = {
         'total_records': len(df),
-        'cat_dist': {},
-        'desc_stats': {},
+        'cat_dist': {},       # Distribución de columnas categóricas (para gráficas de pastel)
+        'desc_stats': {},     # Estadísticas descriptivas por columna numérica
         'hist_data': {},
         'hist_col': None,
         'numeric_cols': [],
-        'interpretations': []
+        'interpretations': [] # Interpretaciones automáticas en texto
     }
     
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     
-    # Distributions for categorical charts
+    # Conteo de frecuencias para las gráficas de pastel de datos categóricos
     for col in categorical_cols:
         if 2 <= df[col].nunique() <= 20:
             stats['cat_dist'][col] = df[col].value_counts().to_dict()
                 
-    # Descriptive Statistics for numeric columns
+    # Estadísticas descriptivas para cada columna numérica
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     stats['numeric_cols'] = numeric_cols
     
@@ -196,16 +230,16 @@ def api_stats():
         stats['desc_stats'][c] = {
             'min': c_min,
             'max': c_max,
-            'range': c_max - c_min,
-            'mean': c_mean,
+            'range': c_max - c_min,    # Rango (diferencia entre max y min)
+            'mean': c_mean,            # Promedio aritmético
             'median': float(s.median()),
-            'std': c_std,
-            'var': float(s.var()) if len(s) > 1 else 0.0,
-            'skew': float(s.skew()) if len(s) > 2 else 0.0,
-            'kurtosis': float(s.kurtosis()) if len(s) > 3 else 0.0
+            'std': c_std,              # Desviación estándar (qué tan dispersos están los datos)
+            'var': float(s.var()) if len(s) > 1 else 0.0,       # Varianza
+            'skew': float(s.skew()) if len(s) > 2 else 0.0,     # Sesgo (asimetría de la distribución)
+            'kurtosis': float(s.kurtosis()) if len(s) > 3 else 0.0  # Curtosis (altura del pico)
         }
         
-        # Simple Interpretation rules
+        # Reglas simples para generar interpretaciones automáticas en texto
         skew = stats['desc_stats'][c]['skew']
         if skew > 1:
             stats['interpretations'].append(f"La variable '{c}' tiene una asimetría positiva alta (sesgada a la derecha).")
@@ -215,15 +249,15 @@ def api_stats():
         if c_std > c_mean and c_mean > 0:
             stats['interpretations'].append(f"La variable '{c}' presenta una alta dispersión (Desviación Estándar mayor que la Media).")
             
-    # Histogram data for ALL numerical columns
+    # Datos de histograma para TODAS las columnas numéricas (15 intervalos cada una)
     stats['hist_data_all'] = {}
     for col in numeric_cols:
         s_hist = df[col].dropna()
         if len(s_hist) > 0:
             hist, bin_edges = np.histogram(s_hist, bins=15)
             stats['hist_data_all'][col] = {
-                'counts': hist.tolist(),
-                'bins': bin_edges.tolist()
+                'counts': hist.tolist(),    # Frecuencia (cuántos datos hay en cada intervalo)
+                'bins': bin_edges.tolist()  # Los límites de cada intervalo del histograma
             }
             
     if not stats['interpretations']:
@@ -233,13 +267,17 @@ def api_stats():
 
 @app.route('/api/report/pdf', methods=['GET'])
 def api_report_pdf():
+    """
+    Genera y descarga un reporte estadístico en formato PDF del dataset actual.
+    Usa la librería xhtml2pdf para convertir el template HTML a PDF.
+    """
     df = get_data()
     if df.empty:
-        return "No data available", 404
+        return "No hay datos disponibles", 404
         
     df = apply_dynamic_filters(df, request.args)
     
-    # Compute stats for the report
+    # Calcular estadísticas para incluir en el reporte
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     desc_stats = {}
     for c in numeric_cols:
@@ -268,31 +306,40 @@ def api_report_pdf():
         response.headers['Content-Disposition'] = 'attachment; filename=reporte_estadistico.pdf'
         return response
     else:
-        return "Error creating PDF", 500
+        return "Error al generar el PDF", 500
 
 @app.route('/api/train', methods=['POST'])
 def api_train():
+    """
+    Ruta principal del entrenamiento. Recibe la configuración del usuario
+    (algoritmo, número de clusters, columnas a usar) y entrena el modelo K-Means.
+    Devuelve las coordenadas PCA para la gráfica, el Silhouette Score, composición
+    de clusters y una descripción heurística de cada grupo.
+    """
     data = request.json
     algorithm = data.get('algorithm', 'kmeans')
     n_clusters = int(data.get('n_clusters', 16))
-    features = data.get('features', [])
+    features = data.get('features', [])     # Columnas numéricas seleccionadas por el usuario
     
     df = get_data()
     if df.empty:
-        return jsonify({'error': 'No data to train on'}), 404
+        return jsonify({'error': 'No hay datos para entrenar. Sube un dataset primero.'}), 404
         
     if not features:
+        # Si el usuario no seleccionó columnas, usar todas las numéricas por defecto
         features = df.select_dtypes(include=[np.number]).columns.tolist()
             
     for f in features:
         if f not in df.columns:
-            return jsonify({'error': f'Feature {f} not found in dataset'}), 400
+            return jsonify({'error': f'La columna {f} no se encontró en el dataset.'}), 400
             
     model = MBTIClusterModel()
     try:
+        # Rellenar valores vacíos con el promedio de cada columna antes de entrenar
         df_ml = df[features].fillna(df[features].mean())
         results = model.train(df_ml, features, algorithm=algorithm, n_clusters=n_clusters)
         
+        # Guardar el modelo y los resultados en la memoria del servidor para uso posterior
         app.config['CURRENT_MODEL'] = model
         app.config['LAST_LABELS'] = results['labels']
         app.config['LAST_FEATURES'] = features
@@ -300,14 +347,14 @@ def api_train():
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
         eval_col = None
         
-        # Priority 1: Specifically look for the personality type column
+        # Prioridad 1: Buscar la columna de tipo de personalidad MBTI
         priority_names = ['tipo_resultante', 'tipo_mbti', 'personalidad', 'mbti']
         for p in priority_names:
             if p in categorical_cols:
                 eval_col = p
                 break
                 
-        # Priority 2: If no personality column is found, fallback to any text column with 2-50 unique categories
+        # Prioridad 2: Si no existe, usar cualquier columna de texto con entre 2 y 50 categorías
         if not eval_col and len(categorical_cols) > 0:
             for col in categorical_cols:
                 if 2 <= df[col].nunique() <= 50:
@@ -315,27 +362,54 @@ def api_train():
                     break
                     
         if eval_col:
+            # ────────────────────────────────────────────────────────────────
+            # CÁLCULO DE PUREZA (EFECTIVIDAD DEL CLÚSTER)
+            # ────────────────────────────────────────────────────────────────
+            # ¿Qué es la pureza?
+            # Es una métrica que mide qué tan "homogéneo" (efectivo) es un clúster.
+            # Si el 90% de las personas de un clúster tienen el mismo tipo MBTI,
+            # la pureza es 90% -> el clúster es muy efectivo y bien definido.
+            # Si cada persona tiene un tipo diferente, la pureza será baja -> el grupo es difuso.
+            #
+            # Fórmula de pureza por clúster:
+            #   Pureza(k) = (cantidad de personas con el tipo dominante en el clúster k)
+            #               / (total de personas en el clúster k) * 100
+            #
+            # Un clúster con 80%+ de pureza indica que K-Means logró agrupar perfiles
+            # MBTI similares sin haberlos visto nunca (aprendizaje no supervisado).
+            # ────────────────────────────────────────────────────────────────
             composition = []
+            # Agregar la columna de etiquetas de clúster al DataFrame para poder filtrar por grupo
             df_with_labels = df.copy()
             df_with_labels['cluster'] = results['labels']
             
             for cluster_id in range(n_clusters):
+                # Filtrar solo a las personas que pertenecen a este clúster
                 cluster_data = df_with_labels[df_with_labels['cluster'] == cluster_id]
                 if len(cluster_data) > 0:
+                    # value_counts(normalize=True) calcula la proporción de cada tipo en el grupo
+                    # por ejemplo: {'INTJ': 0.72, 'INTP': 0.15, 'INFJ': 0.13}
                     dist = cluster_data[eval_col].value_counts(normalize=True)
-                    top_label = dist.index[0]
-                    purity = dist.iloc[0] * 100
+                    top_label = dist.index[0]      # El tipo MBTI más frecuente en este clúster
+                    purity = dist.iloc[0] * 100    # % de personas del clúster que tienen ese tipo
                     
                     composition.append({
                         'cluster': cluster_id,
-                        'size': len(cluster_data),
-                        'dominant_label': top_label,
-                        'purity': round(purity, 2),
-                        'eval_col': eval_col
+                        'size': len(cluster_data),       # Cuántas personas hay en este clúster
+                        'dominant_label': top_label,     # El tipo de personalidad dominante
+                        'purity': round(purity, 2),      # % de efectividad del clúster
+                        'eval_col': eval_col             # La columna usada para evaluar (ej. 'tipo_resultante')
                     })
             results['composition'] = composition
 
-        # Generar descripción estadística por clúster (solo numéricas)
+        # ────────────────────────────────────────────────────────────────
+        # DESCRIPCIÓN HEURÍSTICA DE CADA CLÚSTER
+        # ────────────────────────────────────────────────────────────────
+        # Genera automáticamente una oración en texto que describe el perfil de cada clúster.
+        # Lo hace comparando el promedio del clúster contra el promedio global del dataset.
+        # Si una dimensión del clúster está más del 15% por encima o debajo del promedio global,
+        # se considera una característica "destacada" y se incluye en la descripción.
+        # ────────────────────────────────────────────────────────────────
         cluster_descriptions = {}
         cluster_stats = {}
         df_ml_labels = df_ml.copy()
@@ -344,20 +418,21 @@ def api_train():
         for c_id in range(n_clusters):
             c_data = df_ml_labels[df_ml_labels['cluster'] == c_id][features]
             if len(c_data) > 0:
-                means = c_data.mean()
-                overall_means = df_ml[features].mean()
+                means = c_data.mean()                  # Promedio de este clúster
+                overall_means = df_ml[features].mean() # Promedio global de todo el dataset
                 
-                # Store numeric stats
                 cluster_stats[f"Clúster {c_id}"] = means.to_dict()
                 
                 desc = []
                 deviations = []
                 for f in features:
                     if overall_means[f] != 0:
+                        # Fórmula: desviación relativa = (promedio_clúster - promedio_global) / promedio_global * 100
+                        # Un resultado de +20% significa que este clúster tiene un 20% más que el promedio en esa variable
                         pct_diff = ((means[f] - overall_means[f]) / overall_means[f]) * 100
                         deviations.append((f, pct_diff))
                 
-                # Ordenar por magnitud de la desviación (las más extremas primero)
+                # Ordenar de mayor a menor desviación para destacar las más importantes primero
                 deviations.sort(key=lambda x: abs(x[1]), reverse=True)
                 
                 altos = []
@@ -383,14 +458,14 @@ def api_train():
                 cluster_descriptions[f"Clúster {c_id}"] = "Clúster vacío sin datos representativos."
                 cluster_stats[f"Clúster {c_id}"] = {f: 0 for f in features}
 
+        # Limitar a 2000 puntos en la gráfica para no saturar el navegador
         if len(results['x_pca']) > 2000:
             indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
             results['x_pca'] = [results['x_pca'][i] for i in indices]
             results['y_pca'] = [results['y_pca'][i] for i in indices]
             results['labels'] = [results['labels'][i] for i in indices]
 
-        # Añadir al diccionario original de results
-        results['message'] = 'Model trained successfully.'
+        results['message'] = 'Modelo entrenado exitosamente.'
         results['algorithm'] = algorithm
         results['n_clusters'] = n_clusters
         results['features'] = features
@@ -434,6 +509,11 @@ def api_optimal_k():
 
 @app.route('/api/history', methods=['GET'])
 def api_history():
+    """
+    Devuelve el historial de todos los modelos que alguna vez se guardaron.
+    Lee los archivos .meta.json de la carpeta 'models/' para obtener los metadatos
+    sin tener que cargar los pesados archivos .pkl.
+    """
     models_dir = app.config['MODEL_DIR']
     history = []
     
@@ -447,65 +527,76 @@ def api_history():
                 except:
                     pass
                     
-    # Sort by timestamp descending
+    # Ordenar del más reciente al más antiguo
     history.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
     return jsonify({'history': history})
 
 @app.route('/api/save_model', methods=['POST'])
 def api_save_model():
+    """
+    Guarda el modelo actualmente entrenado en disco como archivo .pkl.
+    También permite al usuario agregarle una descripción personalizada.
+    """
     data = request.json
     description = data.get('description', '')
     
     if 'CURRENT_MODEL' not in app.config:
-        return jsonify({'error': 'No model has been trained yet.'}), 400
+        return jsonify({'error': 'No hay ningún modelo entrenado para guardar.'}), 400
         
     model = app.config['CURRENT_MODEL']
+    # Generar un nombre único con el algoritmo y la fecha/hora actual
     filename = f"model_{model.model_type}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.pkl"
     filepath = os.path.join(app.config['MODEL_DIR'], filename)
     
     try:
         saved_path = model.save(filepath, description)
-        return jsonify({'message': 'Model saved successfully', 'path': saved_path})
+        return jsonify({'message': 'Modelo guardado exitosamente.', 'path': saved_path})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/load_model', methods=['POST'])
 def api_load_model():
+    """
+    Carga un modelo .pkl guardado y lo deja listo para usar.
+    Luego aplica ese modelo al dataset actual para generar las gráficas sin necesidad de reentrenar.
+    """
     data = request.json
     filename = data.get('filename')
 
     if not filename:
-        return jsonify({'error': 'No filename provided'}), 400
+        return jsonify({'error': 'No se proporcionó el nombre del archivo.'}), 400
 
     filepath = os.path.join(app.config['MODEL_DIR'], filename)
     if not os.path.exists(filepath):
-        return jsonify({'error': f'Model file not found: {filename}'}), 404
+        return jsonify({'error': f'Archivo de modelo no encontrado: {filename}'}), 404
 
     model = MBTIClusterModel()
     try:
         metadata = model.load(filepath)
     except Exception as e:
-        return jsonify({'error': f'Failed to load model: {str(e)}'}), 500
+        return jsonify({'error': f'Error al cargar el modelo: {str(e)}'}), 500
 
     app.config['CURRENT_MODEL'] = model
 
     df = get_data()
     if df.empty or not model.features:
         return jsonify({
-            'message': 'Model loaded',
+            'message': 'Modelo cargado (sin dataset activo para graficar)',
             'metadata': metadata,
             'features': model.features
         })
 
+    # Verificar que el dataset actual tenga las mismas columnas con las que se entrenó
     missing = [f for f in model.features if f not in df.columns]
     if missing:
         return jsonify({
-            'error': f'Loaded model requires features not in current dataset: {missing}'
+            'error': f'El modelo requiere columnas que no existen en el dataset actual: {missing}'
         }), 400
 
+    # Aplicar el modelo cargado al dataset para generar las coordenadas PCA de la gráfica
     df_ml = df[model.features].fillna(df[model.features].mean())
-    X_pca = model.pca.transform(df_ml)
-    labels = model.model.predict(df_ml).tolist()
+    X_pca = model.pca.transform(df_ml)             # Reducir dimensiones con el PCA guardado
+    labels = model.model.predict(df_ml).tolist()   # Clasificar a cada persona en un clúster
     n_comp = X_pca.shape[1]
 
     app.config['LAST_LABELS'] = labels
@@ -523,7 +614,7 @@ def api_load_model():
         'metadata': metadata
     }
     
-    # Calculate cluster composition
+    # Calcular la composición de clústeres (pureza de tipos MBTI) con el modelo cargado
     categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     eval_col = None
     priority_names = ['tipo_resultante', 'tipo_mbti', 'personalidad', 'mbti']
@@ -561,6 +652,7 @@ def api_load_model():
         composition.sort(key=lambda x: x['cluster'])
         results['composition'] = composition
     
+    # Limitar a 2000 puntos en la gráfica para no saturar el navegador
     if len(results['x_pca']) > 2000:
         indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
         results['x_pca']  = [results['x_pca'][i]  for i in indices]
@@ -571,6 +663,10 @@ def api_load_model():
 
 @app.route('/api/list_models', methods=['GET'])
 def api_list_models():
+    """
+    Lista todos los modelos .pkl guardados en la carpeta 'models/'.
+    Lee los metadatos (.meta.json) de cada uno para mostrarlos en el selector de la UI.
+    """
     model_dir = app.config['MODEL_DIR']
     files = []
     for f in os.listdir(model_dir):
@@ -581,24 +677,31 @@ def api_list_models():
                 with open(meta_path) as mf:
                     meta = json.load(mf)
             files.append({'filename': f, 'metadata': meta})
+    # Ordenar de más reciente a más antiguo
     files.sort(key=lambda x: x['filename'], reverse=True)
     return jsonify(files)
 
 @app.route('/api/download_results', methods=['GET'])
 def api_download_results():
+    """
+    Descarga el dataset original pero con una columna extra 'cluster' que indica
+    a qué grupo pertenece cada persona según el último entrenamiento.
+    Disponible en formato CSV o Excel.
+    """
     if 'LAST_LABELS' not in app.config:
-        return jsonify({'error': 'No clustering results available.'}), 400
+        return jsonify({'error': 'No hay resultados de clustering disponibles.'}), 400
 
     df = get_data()
     labels = app.config['LAST_LABELS']
 
     if len(labels) != len(df):
+        # Si el dataset tiene más filas que etiquetas (ej. por muestreo), rellenar con None
         df_out = df.copy().reset_index(drop=True)
         label_series = pd.Series(labels + [None] * (len(df_out) - len(labels)))
         df_out.insert(0, 'cluster', label_series)
     else:
         df_out = df.copy().reset_index(drop=True)
-        df_out.insert(0, 'cluster', labels)
+        df_out.insert(0, 'cluster', labels)  # Insertar la columna de clusters al inicio
 
     export_format = request.args.get('format', 'csv')
 
@@ -619,32 +722,40 @@ def api_download_results():
 
 @app.route('/api/predict', methods=['POST'])
 def api_predict():
+    """
+    Simulador: recibe las respuestas de un usuario nuevo y predice a qué clúster pertenece.
+    Usa el modelo actualmente cargado en memoria para la predicción instantánea.
+    """
     data = request.json
     if 'CURRENT_MODEL' not in app.config:
-        return jsonify({'error': 'No model has been trained yet.'}), 400
+        return jsonify({'error': 'No hay ningún modelo entrenado. Entrena o carga uno primero.'}), 400
         
     model = app.config['CURRENT_MODEL']
     features = model.features
     
     if not features:
-        return jsonify({'error': 'Model has no features configured.'}), 400
+        return jsonify({'error': 'El modelo no tiene columnas configuradas.'}), 400
         
     row_data = {}
     for f in features:
         if f not in data:
-            return jsonify({'error': f'Missing feature: {f}'}), 400
+            return jsonify({'error': f'Falta la respuesta para la pregunta: {f}'}), 400
         row_data[f] = float(data[f])
         
+    # Crear un DataFrame de una sola fila con las respuestas del usuario
     df_row = pd.DataFrame([row_data])
     
     try:
-        cluster_id = model.predict(df_row)
+        cluster_id = model.predict(df_row)  # Comparar contra los centroides y asignar al más cercano
         return jsonify({'cluster': cluster_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download', methods=['GET'])
 def api_download():
+    """
+    Descarga el dataset activo (con los filtros aplicados) en formato CSV o Excel.
+    """
     df = get_data()
     df = apply_dynamic_filters(df, request.args)
         
@@ -667,13 +778,16 @@ def api_download():
 
 @app.route('/api/download_model', methods=['GET'])
 def api_download_model():
+    """
+    Descarga físicamente el archivo .pkl de un modelo guardado al equipo del usuario.
+    """
     filename = request.args.get('filename')
     if not filename:
-        return jsonify({'error': 'No filename provided'}), 400
+        return jsonify({'error': 'No se proporcionó el nombre del archivo.'}), 400
         
     filepath = os.path.join(app.config['MODEL_DIR'], filename)
     if not os.path.exists(filepath):
-        return jsonify({'error': 'Model file not found'}), 404
+        return jsonify({'error': 'Archivo de modelo no encontrado.'}), 404
         
     return send_file(filepath, as_attachment=True, download_name=filename)
 

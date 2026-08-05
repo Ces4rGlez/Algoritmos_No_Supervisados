@@ -22,6 +22,10 @@ LAST_NAMES = [
     "Acosta", "Rios", "Silva", "Delgado", "Guerrero", "Vega", "Pena", "Maldonado"
 ]
 
+# Semilla fija: garantiza que el dataset generado sea siempre el mismo
+# entre corridas del script (mismo ruido, mismos nombres ficticios asignados).
+SEED = 42
+
 def calculate_mbti_scores(row):
     # E/I
     sum_e = row['q1_raw'] + row['q3_raw'] + row['q5_raw']
@@ -52,6 +56,11 @@ def calculate_mbti_scores(row):
     return pd.Series([energia, percepcion, decision, estilo, tipo])
 
 def main():
+    # Fijar la semilla ANTES de cualquier llamada aleatoria, para que
+    # random.choice, random.randint y np.random.choice sean reproducibles.
+    random.seed(SEED)
+    np.random.seed(SEED)
+
     base_file = '../Cuestionario MBTI - Hoja 1.csv'
     output_file = 'datos_mbti_10k.csv'
     
@@ -118,6 +127,7 @@ def main():
     
     df_synthetic.to_csv(output_file, index=False)
     print(f"Generated {len(df_synthetic)} synthetic rows and saved to {output_file}")
+    print(f"Seed usada: {SEED} (misma seed = mismo resultado en cualquier corrida)")
 
 if __name__ == '__main__':
     main()

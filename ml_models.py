@@ -10,37 +10,64 @@ import os
 import datetime
 
 class MBTIClusterModel:
+    """
+    Clase principal que maneja la lógica de Machine Learning del proyecto.
+    Se encarga de entrenar el modelo (K-Means), calcular métricas, predecir
+    nuevos usuarios y guardar/cargar el modelo entrenado en disco.
+    """
     def __init__(self):
+        # El modelo matemático real (ej. KMeans de Scikit-Learn)
         self.model = None
+        # Tipo de algoritmo usado ('kmeans' o 'gmm')
         self.model_type = None
+        # Objeto PCA usado para reducir dimensiones y poder graficar en 2D/3D
         self.pca = None
+        # Lista de nombres de las columnas que el modelo usará para aprender (las preguntas del test)
         self.features = []
+        # Puntuación de calidad de los clusters (qué tan bien definidos quedaron los grupos)
         self.silhouette = None
         
     def train(self, df, features, algorithm='kmeans', n_clusters=16):
+        """
+        Método para entrenar el modelo con un dataset (archivo CSV/Excel).
+        """
         self.features = features
         self.n_clusters = n_clusters
+        
+        # Filtramos el dataset para quedarnos solo con las columnas numéricas relevantes
         X = df[features]
         self.model_type = algorithm
         
+        # Selección del algoritmo de entrenamiento
         if algorithm == 'kmeans':
-            self.model = KMeans(n_clusters=n_clusters, random_state=42)
+            # Configuración de K-Means (16 grupos para los 16 tipos MBTI)
+            self.model = KMeans(
+                n_clusters=n_clusters, 
+                random_state=42, # Semilla fija para que los resultados sean reproducibles
+                n_init=10,       # El algoritmo se reinicia 10 veces y guarda el mejor resultado
+                max_iter=300,    # Límite máximo de repeticiones para buscar el centroide perfecto
+                tol=1e-4         # Tolerancia de movimiento para decidir que ya convergió (terminó)
+            )
+            # fit_predict asigna a cada persona a un grupo y recalcula los centroides en bucle
             labels = self.model.fit_predict(X)
+            
         elif algorithm == 'gmm':
+            # Algoritmo alternativo (Gaussian Mixture Models) - no es el principal del proyecto
             self.model = GaussianMixture(n_components=n_clusters, random_state=42)
             labels = self.model.fit_predict(X)
         else:
-            raise ValueError("Invalid algorithm")
+            raise ValueError("Algoritmo inválido")
             
-        # PCA for 2D/3D visualization
+        # PCA (Análisis de Componentes Principales):
+        # Reduce las decenas de dimensiones (preguntas) a solo 2 o 3 para poder dibujarlas en la gráfica
         n_comp = min(3, X.shape[1])
         self.pca = PCA(n_components=n_comp)
         X_pca = self.pca.fit_transform(X)
         
-        # Calculate explained variance
+        # Calcula qué porcentaje de la información original logramos conservar al reducir a 2D/3D
         explained_variance = float(sum(self.pca.explained_variance_ratio_))
         
-        # Calculate silhouette score
+        # Silhouette Score: Mide matemáticamente (del -1 al 1) si los grupos están bien separados entre sí
         if len(set(labels)) > 1:
             try:
                 self.silhouette = float(silhouette_score(X, labels))
@@ -49,11 +76,12 @@ class MBTIClusterModel:
         else:
             self.silhouette = 0.0
             
+        # Empaquetamos los resultados para enviarlos a la gráfica del frontend
         results = {
-            'labels': labels.tolist(),
-            'x_pca': X_pca[:, 0].tolist(),
-            'y_pca': X_pca[:, 1].tolist() if n_comp > 1 else [0]*len(labels),
-            'z_pca': X_pca[:, 2].tolist() if n_comp > 2 else [0]*len(labels),
+            'labels': labels.tolist(), # A qué grupo pertenece cada persona
+            'x_pca': X_pca[:, 0].tolist(), # Coordenada X en la gráfica 2D/3D
+            'y_pca': X_pca[:, 1].tolist() if n_comp > 1 else [0]*len(labels), # Coordenada Y
+            'z_pca': X_pca[:, 2].tolist() if n_comp > 2 else [0]*len(labels), # Coordenada Z
             'explained_variance': explained_variance,
             'silhouette': self.silhouette,
             'n_clusters': n_clusters,
@@ -93,23 +121,34 @@ class MBTIClusterModel:
         }
         
     def predict(self, df_row):
+        """
+        Método usado por el Simulador para clasificar a un solo usuario nuevo
+        sin tener que volver a entrenar el modelo.
+        """
         if self.model is None or not self.features:
-            raise ValueError("Model not trained yet")
-        # Ensure df_row has exactly the same features in the same order
+            raise ValueError("El modelo aún no ha sido entrenado")
+            
+        # Nos aseguramos de que el nuevo usuario tenga las mismas preguntas exactas que el modelo aprendió
         X = df_row[self.features]
+        # predecir en qué grupo cae basado en la distancia al centroide más cercano
         prediction = self.model.predict(X)
         return int(prediction[0])
         
     def save(self, filepath, description=""):
+        """
+        Guarda ('congela') el modelo entrenado en el disco duro para usarlo en el futuro.
+        Cumple con el requisito de 'Guardar modelo'.
+        """
         if self.model is None:
-            raise ValueError("Model not trained yet")
+            raise ValueError("No hay modelo para guardar")
             
+        # Diccionario con todos los datos necesarios para reconstruir el modelo después
         model_data = {
-            'model': self.model,
-            'pca': self.pca,
+            'model': self.model, # Aquí van empaquetados los 16 centroides finales
+            'pca': self.pca,     # Guardamos también el transformador para la gráfica
             'model_type': self.model_type,
             'silhouette': self.silhouette,
-            'metadata': {
+            'metadata': {        # Información de contexto para el usuario
                 'timestamp': datetime.datetime.now().isoformat(),
                 'description': description,
                 'algorithm': self.model_type,
@@ -118,9 +157,11 @@ class MBTIClusterModel:
                 'silhouette': self.silhouette
             }
         }
+        # Serializamos y guardamos el archivo físico (.pkl)
         joblib.dump(model_data, filepath)
         
-        # Save metadata separately for easy access
+        # Guardamos un pequeño archivo .json adicional solo con los metadatos
+        # Esto sirve para mostrar la lista de modelos guardados sin tener que cargar los pesados .pkl
         meta_filepath = filepath + '.meta.json'
         with open(meta_filepath, 'w') as f:
             json.dump(model_data['metadata'], f)
@@ -128,6 +169,9 @@ class MBTIClusterModel:
         return filepath
         
     def load(self, filepath):
+        """
+        Carga un modelo (.pkl) previamente guardado desde el disco hacia la memoria.
+        """
         model_data = joblib.load(filepath)
         self.model = model_data['model']
         self.pca = model_data['pca']
