@@ -265,9 +265,14 @@
                                 <option value="gmm">Gaussian Mixture Model</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" style="position: relative;">
                             <label for="clusters-input">Número de Clústeres (k)</label>
-                            <input type="number" id="clusters-input" value="16" min="2" max="50">
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="number" id="clusters-input" value="16" min="2" max="50" style="flex: 1;">
+                                <button id="btn-calc-k" class="btn secondary" style="padding: 0 1rem;" title="Calcular K Óptimo (Codo y Silueta)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" style="margin: 0;"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" /></svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -540,11 +545,59 @@
                         </table>
                     </div>
                 </div>
-            </section>
-        </main>
-    </div>
+                <div id="toast" class="toast hidden"></div>
+        
+        <!-- Modal for Optimal K Calculation -->
+        <div id="optimal-k-modal" class="modal hidden">
+            <div class="modal-content" style="max-width: 900px; width: 90%;">
+                <div class="modal-header">
+                    <h2>Análisis de K Óptimo</h2>
+                    <button id="btn-close-modal" class="btn-close">&times;</button>
+                </div>
+                <div class="modal-body" style="padding: 1.5rem;">
+                    <p class="text-muted" style="margin-bottom: 1rem;">Calculando Inercia y Puntaje de Silueta para K desde 2 hasta 20...</p>
+                    
+                    <div id="optimal-k-loader" class="loader-container">
+                        <div class="spinner"></div>
+                        <span>Entrenando modelos iterativamente, esto puede tomar unos segundos...</span>
+                    </div>
 
-    <script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
+                    <div id="optimal-k-results" class="hidden">
+                        <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                            <!-- Elbow Chart -->
+                            <div class="card" style="flex: 1;">
+                                <h4>Método del Codo (Inercia)</h4>
+                                <p class="text-muted" style="font-size: 0.85rem;">Busca el punto donde la curva se aplana abruptamente.</p>
+                                <div style="height: 250px; position: relative;">
+                                    <canvas id="elbowChart"></canvas>
+                                </div>
+                                <div style="margin-top: 1rem; text-align: center;">
+                                    <span id="elbow-suggestion" style="font-weight: 600; color: #3b82f6;">Recomendación: K=?</span>
+                                    <button id="btn-use-elbow-k" class="btn secondary" style="margin-top: 0.5rem; width: 100%;">Usar este K</button>
+                                </div>
+                            </div>
+                            
+                            <!-- Silhouette Chart -->
+                            <div class="card" style="flex: 1;">
+                                <h4>Puntaje de Silueta</h4>
+                                <p class="text-muted" style="font-size: 0.85rem;">Busca el valor más alto (más cercano a 1.0).</p>
+                                <div style="height: 250px; position: relative;">
+                                    <canvas id="silhouetteChart"></canvas>
+                                </div>
+                                <div style="margin-top: 1rem; text-align: center;">
+                                    <span id="silhouette-suggestion" style="font-weight: 600; color: #10b981;">Recomendación: K=?</span>
+                                    <button id="btn-use-silhouette-k" class="btn secondary" style="margin-top: 0.5rem; width: 100%;">Usar este K</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <script src="{{ url_for('static', filename='app.js') }}?v=6"></script>
 </body>
 
 </html>

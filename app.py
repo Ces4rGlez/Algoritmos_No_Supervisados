@@ -404,6 +404,34 @@ def api_train():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/optimal_k', methods=['POST'])
+def api_optimal_k():
+    data = request.json
+    algorithm = data.get('algorithm', 'kmeans')
+    features = data.get('features', [])
+    max_k = int(data.get('max_k', 20))
+    
+    df = get_data()
+    if df.empty:
+        return jsonify({'error': 'No data to evaluate'}), 404
+        
+    if not features:
+        features = df.select_dtypes(include=[np.number]).columns.tolist()
+            
+    for f in features:
+        if f not in df.columns:
+            return jsonify({'error': f'Feature {f} not found in dataset'}), 400
+            
+    model = MBTIClusterModel()
+    try:
+        df_ml = df[features].fillna(df[features].mean())
+        results = model.calculate_optimal_k(df_ml, features, algorithm=algorithm, max_k=max_k)
+        return jsonify(results)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/history', methods=['GET'])
 def api_history():
     models_dir = app.config['MODEL_DIR']
