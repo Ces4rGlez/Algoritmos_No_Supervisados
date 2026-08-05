@@ -1,9 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Navigation (Tabs) ---
+    // --- NAVEGACIÓN (Pestañas/Tabs) ---
+    // Esta sección maneja el cambio entre las diferentes pantallas de la app
+    // (Dashboard, Entrenamiento, Simulador, etc.)
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
     function renderHistory(historyList) {
+        // Función para renderizar la tabla del historial de modelos guardados
         const tbody = document.getElementById('history-table-body');
         if (!tbody) return;
         tbody.innerHTML = '';
@@ -50,7 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- File Upload Logic ---
+    // --- LÓGICA DE SUBIDA DE ARCHIVOS ---
+    // Maneja el botón de "Subir dataset" y envía el archivo al backend usando fetch
     const fileInput = document.getElementById('file-input');
     const uploadStatus = document.getElementById('upload-status');
 
@@ -90,7 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Dashboard Logic ---
+    // --- LÓGICA DEL DASHBOARD (Filtros y Tabla) ---
+    // Maneja la visualización paginada de los datos y los filtros dinámicos
     let currentPage = 1;
     let histChart = null;
     let dynamicCharts = []; // store instances of dynamic charts to destroy them later
@@ -182,6 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadData() {
+        // Llama a la API /api/data para traer la tabla de datos y renderizarla en HTML
         try {
             const params = getFiltersParams();
             const url = `/api/data?page=${currentPage}&per_page=20&${params}&t=${new Date().getTime()}`;
@@ -219,10 +225,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderDynamicFilters(filtersInfo) {
+        // Genera dinámicamente los menús desplegables de filtros según las columnas del dataset
         const container = document.getElementById('dynamic-filters-container');
         if (!container) return;
         
-        // Only generate filters if container is empty (don't overwrite user selections when filtering)
+        // Solo generar filtros si el contenedor está vacío (no sobreescribir selecciones del usuario)
         if (container.children.length > 0) return;
         
         for (const [colName, uniqueValues] of Object.entries(filtersInfo)) {
@@ -254,6 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateFeaturesCheckboxes(num_cols) {
+        // Actualiza los checkboxes de selección de columnas para el entrenamiento.
+        // Si el dataset tiene las columnas MBTI estándar, las marca por defecto.
         const container = document.getElementById('features-container');
         if(!container) return;
         container.innerHTML = '';
@@ -263,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Prioritize MBTI columns if they exist, otherwise select top 5
+        // Priorizar columnas MBTI si existen, si no marcar las primeras 5 del dataset
         const mbtiCols = ['energia_score', 'percepcion_score', 'decision_score', 'estilo_score'];
         const hasMbti = mbtiCols.every(c => num_cols.includes(c));
         
@@ -286,6 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderTable(data, columns) {
+        // Dibuja la tabla de datos en el Dashboard a partir de la respuesta JSON del servidor
         const thead = document.getElementById('data-table-head');
         const tbody = document.getElementById('data-table-body');
         if (!thead || !tbody) return;
@@ -295,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data.length === 0 || columns.length === 0) return;
 
-        // Header
+        // Construir encabezados de la tabla
         const trHead = document.createElement('tr');
         columns.forEach(col => { 
             const th = document.createElement('th');
@@ -304,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         thead.appendChild(trHead);
 
-        // Body
+        // Construir filas del cuerpo de la tabla
         data.forEach(row => {
             const tr = document.createElement('tr');
             columns.forEach(col => {
@@ -319,6 +329,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadStats() {
+        // Llama a /api/stats para obtener estadísticas descriptivas y renderizar
+        // las tarjetas KPI, la tabla de estadísticas y las gráficas de distribución
         try {
             const params = getFiltersParams();
             const res = await fetch(`/api/stats?${params}&t=${new Date().getTime()}`);
@@ -350,13 +362,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderKpiCards(descStats) {
+        // Dibuja las tarjetas de resumen (KPI cards) con el promedio y desviación de las primeras 4 variables
         const container = document.getElementById('kpi-cards-container');
         if (!container) return;
         container.innerHTML = '';
 
         let count = 0;
         for (const [key, s] of Object.entries(descStats)) {
-            if (count >= 4) break; // Maximum of 4 KPI cards
+            if (count >= 4) break; // Máximo 4 tarjetas para no ocupar demasiado espacio
             const card = document.createElement('div');
             card.className = 'card'; // using card class for better styling matching existing UI
             card.style.padding = '1.5rem';
@@ -411,10 +424,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderDynamicChartsGrid(stats) {
+        // Genera la cuadrícula de gráficas dinámicamente según el tipo de datos:
+        // - Histograma con selector de variable (para datos numéricos)
+        // - Gráficas de pastel (para datos categóricos como el tipo MBTI)
         const grid = document.getElementById('dynamic-charts-grid');
         if (!grid) return;
         
-        // Destroy old charts
+        // Destruir las gráficas antiguas antes de crear las nuevas (evita duplicados)
         dynamicCharts.forEach(c => c.destroy());
         dynamicCharts = [];
         grid.innerHTML = '';
@@ -429,7 +445,8 @@ document.addEventListener('DOMContentLoaded', () => {
             '#f59e0b', '#d97706', '#b45309', '#78350f'
         ];
 
-        // 1. Render Histogram with Chip Selector (Space-saving but fast)
+        // 1. Histograma con selector de variable (chip buttons)
+        // Permite al usuario ver la distribución de cualquier columna numérica
         if (stats.hist_data_all && Object.keys(stats.hist_data_all).length > 0) {
             const histCard = document.createElement('div');
             histCard.className = 'card chart-card';
@@ -502,13 +519,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 
-                // Keep track to destroy later
+                // Guardar referencia para destruir la gráfica si cambia de variable
                 if (!dynamicCharts.includes(mainHistChart)) {
                     dynamicCharts.push(mainHistChart);
                 }
             };
 
-            // Create buttons for each variable
+            // Crear un botón (chip) para cada variable numérica del dataset
             let firstCol = null;
             for (const [colName, histData] of Object.entries(stats.hist_data_all)) {
                 if (!firstCol) firstCol = { colName, histData };
@@ -521,12 +538,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.innerText = colName;
                 
                 btn.addEventListener('click', (e) => {
-                    // Remove active style from all
+                    // Quitar el estilo activo de todos los botones
                     Array.from(chipsDiv.children).forEach(c => {
                         c.style.backgroundColor = 'var(--bg-alt)';
                         c.style.color = 'var(--text-main)';
                     });
-                    // Set active style for clicked
+                    // Marcar el botón seleccionado como activo
                     btn.style.backgroundColor = 'var(--primary)';
                     btn.style.color = '#fff';
                     
@@ -536,7 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chipsDiv.appendChild(btn);
             }
             
-            // Render the first one by default
+            // Mostrar la primera variable por defecto al cargar
             if (firstCol) {
                 chipsDiv.firstChild.style.backgroundColor = 'var(--primary)';
                 chipsDiv.firstChild.style.color = '#fff';
@@ -544,10 +561,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // 2. Render Pie Charts for Categorical Data
+        // 2. Gráficas de pastel para datos categóricos (ej. distribución de tipos MBTI)
         let chartIndex = 0;
         for (const [colName, dist] of Object.entries(stats.cat_dist)) {
-            if (chartIndex >= 3) break; // limit to 3 categorical charts to avoid clutter
+            if (chartIndex >= 3) break; // Máximo 3 gráficas de pastel para no saturar la pantalla
             const card = document.createElement('div');
             card.className = 'card chart-card';
             const canvasId = `dynamic-chart-cat-${chartIndex}`;
@@ -594,7 +611,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // --- Training Logic ---
+    // --- LÓGICA DE ENTRENAMIENTO ---
+    // Maneja el botón "Entrenar Modelo": recoge la configuración, llama a /api/train
+    // y dibuja los resultados (gráfica PCA, Silhouette Score, composición de clústeres)
     const btnTrain = document.getElementById('btn-train');
     const loader = document.getElementById('training-loader');
     const saveModelPanel = document.getElementById('save-model-panel');
@@ -608,7 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const algorithm = document.getElementById('algo-select').value;
         const n_clusters = document.getElementById('clusters-input').value;
 
-        // Get selected features
+        // Obtener las columnas seleccionadas por el usuario para el entrenamiento
         const featureCheckboxes = document.querySelectorAll('.feature-cb:checked');
         const selectedFeatures = Array.from(featureCheckboxes).map(cb => cb.value);
 
@@ -687,10 +706,11 @@ document.addEventListener('DOMContentLoaded', () => {
             saveModelPanel.classList.remove('hidden');
             saveMsg.classList.add('hidden');
 
+            // Después de entrenar, cambiar automáticamente a la pestaña de Resultados
             document.querySelector('[data-tab="results"]').click();
-            renderClustersChart(result.x_pca, result.y_pca, result.labels);
+            renderClustersChart(result.x_pca, result.y_pca, result.labels); // Gráfica 2D
             if (result.z_pca && result.z_pca.length > 0) {
-                render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels);
+                render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels); // Gráfica 3D
             }
 
             buildPredictionForm(selectedFeatures);
@@ -758,10 +778,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ── Load saved model ──────────────────────────────────────────────────
+    // --- CARGAR MODELO GUARDADO ---
     let savedModelsList = [];
     
     async function refreshModelList() {
+        // Actualiza el listado desplegable de modelos .pkl disponibles en la carpeta 'models/'
         const sel = document.getElementById('model-select');
         const selCompA = document.getElementById('compare-model-a');
         const selCompB = document.getElementById('compare-model-b');
@@ -881,7 +902,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ── Download results ────────────────────────────────────────────────────
+    // --- DESCARGAR RESULTADOS DEL CLUSTERING ---
+    // Descarga el dataset original con la columna 'cluster' añadida
     const btnDownloadResults = document.getElementById('btn-download-results');
     if (btnDownloadResults) {
         btnDownloadResults.addEventListener('click', () => {
@@ -896,7 +918,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ── Comparison Logic ────────────────────────────────────────────────────
+    // --- COMPARADOR DE MODELOS ---
+    // Permite comparar dos modelos guardados lado a lado, mostrando sus métricas
+    // y resaltando cuál tiene mejor Silhouette Score
     const btnRunComparison = document.getElementById('btn-run-comparison');
     if (btnRunComparison) {
         btnRunComparison.addEventListener('click', () => {
@@ -929,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 { label: 'Características (Features)', key: 'features', format: val => val ? val.join(', ') : 'N/A' }
             ];
             
-            // Render textual metadata
+            // Renderizar los metadatos textuales de ambos modelos
             metrics.forEach(m => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -940,7 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tbody.appendChild(tr);
             });
             
-            // Render Silhouette Score and visually indicate the winner
+            // Renderizar el Silhouette Score y resaltar visualmente al ganador
             let silA = modelA.metadata.silhouette;
             let silB = modelB.metadata.silhouette;
             
@@ -968,10 +992,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Load model list on page load
+    // Cargar la lista de modelos al iniciar la página
     refreshModelList();
 
     function renderClustersChart(x, y, labels) {
+        // Dibuja la gráfica de dispersión 2D (scatter plot) con los resultados del clustering.
+        // Cada punto representa a una persona, y el color indica su clúster.
+        // Los ejes X e Y son las dos primeras componentes principales (PCA1 y PCA2).
         const ctx = document.getElementById('chart-clusters').getContext('2d');
 
         const datasets = {};
@@ -1030,6 +1057,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function render3DChart(x, y, z, labels) {
+        // Dibuja la gráfica 3D interactiva usando la librería Plotly.
+        // Los tres ejes son PCA1, PCA2 y PCA3. El color de cada punto indica el clúster.
         if(typeof Plotly === 'undefined') return;
         
         const trace = {
@@ -1059,6 +1088,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function buildPredictionForm(features) {
+        // Construye dinámicamente el formulario del Simulador con un campo
+        // de entrada (input) por cada columna (pregunta) que usó el modelo.
+        // Al hacer clic en "Predecir", envía los valores a /api/predict.
         const panel = document.getElementById('prediction-simulator-panel');
         const container = document.getElementById('prediction-form-container');
         const resDiv = document.getElementById('prediction-result');
@@ -1081,7 +1113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             container.appendChild(div);
         });
 
-        // Remove old listeners to avoid multiple fires
+        // Clonar el botón para eliminar cualquier listener antiguo y evitar múltiples disparos
         const newBtn = btnPredict.cloneNode(true);
         btnPredict.parentNode.replaceChild(newBtn, btnPredict);
 
@@ -1132,7 +1164,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initial load
+    // --- CARGA INICIAL ---
+    // Al cargar la página, pedir los datos y estadísticas del servidor.
+    // Si no hay dataset subido, el servidor devolverá 404 y la pantalla de bienvenida permanecerá.
     loadData();
     loadStats();
 });
