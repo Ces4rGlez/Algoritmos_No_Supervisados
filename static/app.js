@@ -1164,6 +1164,146 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Optimal K Logic ---
+    const btnCalcK = document.getElementById('btn-calc-k');
+    const optimalKModal = document.getElementById('optimal-k-modal');
+    const btnCloseModal = document.getElementById('btn-close-modal');
+    const optimalKLoader = document.getElementById('optimal-k-loader');
+    const optimalKResults = document.getElementById('optimal-k-results');
+    
+    let elbowChartObj = null;
+    let silhouetteChartObj = null;
+    
+    if (btnCalcK) {
+        btnCalcK.addEventListener('click', async () => {
+            const algorithm = document.getElementById('algo-select').value;
+            
+            // Get selected features
+            const featureCheckboxes = document.querySelectorAll('.feature-cb:checked');
+            const features = Array.from(featureCheckboxes).map(cb => cb.value);
+            
+            if (features.length < 2) {
+                alert('Selecciona al menos 2 características numéricas para evaluar K.');
+                return;
+            }
+            
+            optimalKModal.classList.remove('hidden');
+            optimalKLoader.classList.remove('hidden');
+            optimalKResults.classList.add('hidden');
+            
+            try {
+                const res = await fetch('/api/optimal_k', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ algorithm, features, max_k: 20 })
+                });
+                const result = await res.json();
+                
+                if (!res.ok) throw new Error(result.error);
+                
+                // Draw Charts
+                if (elbowChartObj) elbowChartObj.destroy();
+                if (silhouetteChartObj) silhouetteChartObj.destroy();
+                
+                const ctxElbow = document.getElementById('elbowChart').getContext('2d');
+                elbowChartObj = new Chart(ctxElbow, {
+                    type: 'line',
+                    data: {
+                        labels: result.k_values,
+                        datasets: [{
+                            label: 'Inercia',
+                            data: result.inertia,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.1,
+                            pointBackgroundColor: '#3b82f6'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                
+                const ctxSilhouette = document.getElementById('silhouetteChart').getContext('2d');
+                silhouetteChartObj = new Chart(ctxSilhouette, {
+                    type: 'line',
+                    data: {
+                        labels: result.k_values,
+                        datasets: [{
+                            label: 'Silueta',
+                            data: result.silhouette,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.1,
+                            pointBackgroundColor: '#10b981'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                
+                // --- FÓRMULA PARA HALLAR EL "CODO" (Punto de inflexión) ---
+                // Matemáticamente buscamos el punto de la curva de Inercia que esté más alejado 
+                // de la línea recta imaginaria trazada entre el primer K y el último K.
+                // Usamos la fórmula geométrica de "Distancia de un punto a una recta".
+                let bestElbowK = result.k_values[0];
+                let maxDist = -1;
+                const p1 = {x: result.k_values[0], y: result.inertia[0]};
+                const p2 = {x: result.k_values[result.k_values.length-1], y: result.inertia[result.inertia.length-1]};
+                
+                for(let i=1; i<result.k_values.length-1; i++){
+                    const p = {x: result.k_values[i], y: result.inertia[i]};
+                    // Fórmula Distancia = |A*x + B*y + C| / sqrt(A^2 + B^2)
+                    const num = Math.abs((p2.y - p1.y)*p.x - (p2.x - p1.x)*p.y + p2.x*p1.y - p2.y*p1.x);
+                    const den = Math.sqrt(Math.pow(p2.y - p1.y, 2) + Math.pow(p2.x - p1.x, 2));
+                    const dist = num/den;
+                    if(dist > maxDist){
+                        maxDist = dist;
+                        bestElbowK = p.x;
+                    }
+                }
+                document.getElementById('elbow-suggestion').innerText = `Recomendación: K=${bestElbowK}`;
+                document.getElementById('btn-use-elbow-k').dataset.k = bestElbowK;
+                
+                // --- FÓRMULA PARA HALLAR LA MEJOR SILUETA ---
+                // Aquí simplemente iteramos por el arreglo de resultados para encontrar 
+                // el valor numérico más cercano a 1.0 (el máximo absoluto).
+                let bestSilK = result.k_values[0];
+                let maxSil = result.silhouette[0];
+                for(let i=1; i<result.silhouette.length; i++){
+                    if(result.silhouette[i] > maxSil){
+                        maxSil = result.silhouette[i];
+                        bestSilK = result.k_values[i];
+                    }
+                }
+                document.getElementById('silhouette-suggestion').innerText = `Recomendación: K=${bestSilK} (${maxSil.toFixed(2)})`;
+                document.getElementById('btn-use-silhouette-k').dataset.k = bestSilK;
+                
+                optimalKLoader.classList.add('hidden');
+                optimalKResults.classList.remove('hidden');
+                
+            } catch (err) {
+                optimalKModal.classList.add('hidden');
+                alert(err.message);
+            }
+        });
+        
+        btnCloseModal.addEventListener('click', () => {
+            optimalKModal.classList.add('hidden');
+        });
+        
+        document.getElementById('btn-use-elbow-k').addEventListener('click', (e) => {
+            document.getElementById('clusters-input').value = e.target.dataset.k;
+            optimalKModal.classList.add('hidden');
+            alert(`Se ha establecido K=${e.target.dataset.k} (Codo)`);
+        });
+        
+        document.getElementById('btn-use-silhouette-k').addEventListener('click', (e) => {
+            document.getElementById('clusters-input').value = e.target.dataset.k;
+            optimalKModal.classList.add('hidden');
+            alert(`Se ha establecido K=${e.target.dataset.k} (Silueta)`);
+        });
+    }
+
     // --- CARGA INICIAL ---
     // Al cargar la página, pedir los datos y estadísticas del servidor.
     // Si no hay dataset subido, el servidor devolverá 404 y la pantalla de bienvenida permanecerá.

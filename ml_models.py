@@ -89,6 +89,43 @@ class MBTIClusterModel:
         }
         return results
         
+    def calculate_optimal_k(self, df, features, algorithm='kmeans', max_k=20):
+        X = df[features]
+        k_values = list(range(2, max_k + 1))
+        inertia = []
+        silhouette = []
+        
+        for k in k_values:
+            if algorithm == 'kmeans':
+                model = KMeans(n_clusters=k, random_state=42)
+                labels = model.fit_predict(X)
+                # FÓRMULA DEL CODO (Inercia / WCSS):
+                # Calcula la suma de las distancias al cuadrado de cada punto al centroide de su clúster.
+                # WCSS = Σ (x_i - μ_k)²
+                inertia.append(float(model.inertia_))
+            elif algorithm == 'gmm':
+                model = GaussianMixture(n_components=k, random_state=42)
+                labels = model.fit_predict(X)
+                # GMM doesn't have inertia in the same way, we can use negative log-likelihood or AIC/BIC, but to match elbow, we'll use BIC
+                inertia.append(float(model.bic(X)))
+            else:
+                raise ValueError("Invalid algorithm")
+                
+            if len(set(labels)) > 1:
+                # FÓRMULA DEL PUNTAJE DE SILUETA:
+                # Calcula s(i) = (b(i) - a(i)) / max(a(i), b(i))
+                # a(i): distancia media intra-clúster, b(i): distancia media al clúster más cercano
+                sil_score = float(silhouette_score(X, labels))
+            else:
+                sil_score = 0.0
+            silhouette.append(sil_score)
+            
+        return {
+            'k_values': k_values,
+            'inertia': inertia,
+            'silhouette': silhouette
+        }
+        
     def predict(self, df_row):
         """
         Método usado por el Simulador para clasificar a un solo usuario nuevo
