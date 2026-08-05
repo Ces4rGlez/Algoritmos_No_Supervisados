@@ -1179,11 +1179,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const algorithm = document.getElementById('algo-select').value;
             
             // Get selected features
-            const featureCheckboxes = document.querySelectorAll('.feature-checkbox:checked');
+            const featureCheckboxes = document.querySelectorAll('.feature-cb:checked');
             const features = Array.from(featureCheckboxes).map(cb => cb.value);
             
             if (features.length < 2) {
-                showToast('Selecciona al menos 2 características numéricas para evaluar K.', 'error');
+                alert('Selecciona al menos 2 características numéricas para evaluar K.');
                 return;
             }
             
@@ -1241,7 +1241,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     options: { responsive: true, maintainAspectRatio: false }
                 });
                 
-                // Calculate Elbow math (simple approximation using distance to line)
+                // --- FÓRMULA PARA HALLAR EL "CODO" (Punto de inflexión) ---
+                // Matemáticamente buscamos el punto de la curva de Inercia que esté más alejado 
+                // de la línea recta imaginaria trazada entre el primer K y el último K.
+                // Usamos la fórmula geométrica de "Distancia de un punto a una recta".
                 let bestElbowK = result.k_values[0];
                 let maxDist = -1;
                 const p1 = {x: result.k_values[0], y: result.inertia[0]};
@@ -1249,6 +1252,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 for(let i=1; i<result.k_values.length-1; i++){
                     const p = {x: result.k_values[i], y: result.inertia[i]};
+                    // Fórmula Distancia = |A*x + B*y + C| / sqrt(A^2 + B^2)
                     const num = Math.abs((p2.y - p1.y)*p.x - (p2.x - p1.x)*p.y + p2.x*p1.y - p2.y*p1.x);
                     const den = Math.sqrt(Math.pow(p2.y - p1.y, 2) + Math.pow(p2.x - p1.x, 2));
                     const dist = num/den;
@@ -1260,7 +1264,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('elbow-suggestion').innerText = `Recomendación: K=${bestElbowK}`;
                 document.getElementById('btn-use-elbow-k').dataset.k = bestElbowK;
                 
-                // Calculate best silhouette
+                // --- FÓRMULA PARA HALLAR LA MEJOR SILUETA ---
+                // Aquí simplemente iteramos por el arreglo de resultados para encontrar 
+                // el valor numérico más cercano a 1.0 (el máximo absoluto).
                 let bestSilK = result.k_values[0];
                 let maxSil = result.silhouette[0];
                 for(let i=1; i<result.silhouette.length; i++){
@@ -1277,7 +1283,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             } catch (err) {
                 optimalKModal.classList.add('hidden');
-                showToast(err.message, 'error');
+                alert(err.message);
             }
         });
         
@@ -1288,13 +1294,13 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('btn-use-elbow-k').addEventListener('click', (e) => {
             document.getElementById('clusters-input').value = e.target.dataset.k;
             optimalKModal.classList.add('hidden');
-            showToast(`Se ha establecido K=${e.target.dataset.k} (Codo)`, 'success');
+            alert(`Se ha establecido K=${e.target.dataset.k} (Codo)`);
         });
         
         document.getElementById('btn-use-silhouette-k').addEventListener('click', (e) => {
             document.getElementById('clusters-input').value = e.target.dataset.k;
             optimalKModal.classList.add('hidden');
-            showToast(`Se ha establecido K=${e.target.dataset.k} (Silueta)`, 'success');
+            alert(`Se ha establecido K=${e.target.dataset.k} (Silueta)`);
         });
     }
 
