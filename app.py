@@ -659,13 +659,25 @@ def api_load_model():
 
     app.config['CURRENT_MODEL'] = model
 
+    return jsonify({
+        'message': 'Modelo cargado exitosamente en memoria.',
+        'metadata': metadata,
+        'features': model.features
+    })
+
+@app.route('/api/apply_model', methods=['POST'])
+def api_apply_model():
+    """
+    Aplica el modelo cargado actualmente en memoria al dataset activo.
+    """
+    if 'CURRENT_MODEL' not in app.config:
+        return jsonify({'error': 'No hay un modelo cargado. Carga uno primero.'}), 400
+        
+    model = app.config['CURRENT_MODEL']
     df = get_data()
+    
     if df.empty or not model.features:
-        return jsonify({
-            'message': 'Modelo cargado (sin dataset activo para graficar)',
-            'metadata': metadata,
-            'features': model.features
-        })
+        return jsonify({'error': 'No hay un dataset activo con suficientes características para aplicar el modelo.'}), 400
 
     # Verificar que el dataset actual tenga las mismas columnas con las que se entrenó
     missing = [f for f in model.features if f not in df.columns]
@@ -691,8 +703,7 @@ def api_load_model():
         'explained_variance': float(sum(model.pca.explained_variance_ratio_)),
         'n_clusters': len(set(labels)),
         'algorithm': model.model_type,
-        'features': model.features,
-        'metadata': metadata
+        'features': model.features
     }
     
     # Calcular la composición de clústeres (pureza de tipos MBTI) con el modelo cargado
