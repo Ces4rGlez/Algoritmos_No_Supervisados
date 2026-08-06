@@ -845,8 +845,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
             if (!res.ok) throw new Error(result.error);
 
-            msgEl.innerHTML = ` Modelo cargado: <strong>${filename}</strong>. Revisa la pestaña Resultados.`;
+            msgEl.innerHTML = `✅ ${result.message}`;
             msgEl.classList.remove('hidden');
+            
+            const btnApply = document.getElementById('btn-apply-model');
+            if (btnApply) btnApply.classList.remove('hidden');
             
             const incPanel = document.getElementById('incremental-train-panel');
             if (incPanel) {
@@ -857,6 +860,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+        } catch (e) {
+            alert('Error al cargar el modelo: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg> Cargar Modelo`;
+        }
+    });
+
+    const btnApply = document.getElementById('btn-apply-model');
+    if (btnApply) btnApply.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-apply-model');
+        btn.disabled = true;
+        const originalHtml = btn.innerHTML;
+        btn.textContent = 'Aplicando modelo al dataset...';
+        
+        try {
+            const res = await fetch('/api/apply_model', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.error);
+            
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             document.querySelector('[data-tab="results"]').classList.add('active');
@@ -899,10 +925,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 compPanel.style.display = 'none';
             }
         } catch (e) {
-            alert('Error al cargar el modelo: ' + e.message);
+            alert('Error al aplicar el modelo: ' + e.message);
         } finally {
             btn.disabled = false;
-            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg> Cargar Modelo`;
+            btn.innerHTML = originalHtml;
         }
     });
 
