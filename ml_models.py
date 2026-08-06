@@ -88,6 +88,55 @@ class MBTIClusterModel:
             'algorithm': algorithm
         }
         return results
+
+    def incremental_train(self, df):
+        """
+        Aplica aprendizaje incremental (fine-tuning) usando los centroides previos
+        como punto de partida inicial. Solo funciona si el modelo actual es KMeans.
+        """
+        if self.model_type != 'kmeans' or not hasattr(self.model, 'cluster_centers_'):
+            raise ValueError("El modelo cargado no soporta aprendizaje incremental (debe ser KMeans previamente entrenado)")
+            
+        X = df[self.features]
+        old_centroids = self.model.cluster_centers_
+        
+        # Creamos un nuevo modelo empezando exactamente donde se quedó el anterior
+        new_model = KMeans(
+            n_clusters=self.n_clusters,
+            init=old_centroids,
+            n_init=1,          # Solo 1 reinicio porque ya le damos los puntos exactos
+            max_iter=300,
+            random_state=42
+        )
+        
+        labels = new_model.fit_predict(X)
+        self.model = new_model
+        
+        # Re-calcular PCA y Silhouette con los datos nuevos
+        n_comp = min(3, X.shape[1])
+        self.pca = PCA(n_components=n_comp)
+        X_pca = self.pca.fit_transform(X)
+        explained_variance = float(sum(self.pca.explained_variance_ratio_))
+        
+        if len(set(labels)) > 1:
+            try:
+                self.silhouette = float(silhouette_score(X, labels))
+            except:
+                self.silhouette = 0.0
+        else:
+            self.silhouette = 0.0
+            
+        return {
+            'labels': labels.tolist(),
+            'x_pca': X_pca[:, 0].tolist(),
+            'y_pca': X_pca[:, 1].tolist() if n_comp > 1 else [0]*len(labels),
+            'z_pca': X_pca[:, 2].tolist() if n_comp > 2 else [0]*len(labels),
+            'explained_variance': explained_variance,
+            'silhouette': self.silhouette,
+            'n_clusters': self.n_clusters,
+            'algorithm': self.model_type
+        }
+
         
     def calculate_optimal_k(self, df, features, algorithm='kmeans', max_k=20):
         X = df[features]
@@ -183,6 +232,12 @@ class MBTIClusterModel:
         self.pca = model_data['pca']
         self.model_type = model_data['model_type']
         self.silhouette = model_data.get('silhouette', 0.0)
+        
+        # Recuperar n_clusters del metadata (si es un modelo antiguo que no lo tenía, asume 16 por defecto)
+        self.n_clusters = model_data['metadata'].get('n_clusters')
+        if not self.n_clusters:
+            self.n_clusters = 16
+            
         self.features = model_data['metadata'].get('features', [])
         return model_data['metadata']
 

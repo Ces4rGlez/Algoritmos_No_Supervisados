@@ -475,11 +475,92 @@ def api_train():
         
         return jsonify(results)
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/incremental_train', methods=['POST'])
+def api_incremental_train():
+    """
+    Ruta para aplicar aprendizaje incremental (fine-tuning) sobre el modelo
+    actualmente cargado usando el dataset activo.
+    """
+    df = get_data()
+    if df.empty:
+        return jsonify({'error': 'No hay datos para entrenar. Sube un dataset primero.'}), 404
+        
+    if 'CURRENT_MODEL' not in app.config:
+        return jsonify({'error': 'No hay ningún modelo cargado para actualizar. Carga un modelo KMeans primero.'}), 400
+        
+    model = app.config['CURRENT_MODEL']
+    
+    if getattr(model, 'model_type', '') != 'kmeans':
+        return jsonify({'error': 'El aprendizaje incremental solo está soportado para modelos KMeans.'}), 400
+        
+    # Verificar que el dataset actual tenga las mismas columnas con las que se entrenó el modelo original
+    missing = [f for f in model.features if f not in df.columns]
+    if missing:
+        return jsonify({'error': f'El dataset actual no tiene las columnas necesarias para actualizar este modelo: {missing}'}), 400
+        
+    try:
+        df_ml = df[model.features].fillna(df[model.features].mean())
+        results = model.incremental_train(df_ml)
+        
+        # Guardar en la configuración de la app
+        app.config['LAST_LABELS'] = results['labels']
+        app.config['LAST_FEATURES'] = model.features
+        
+        # Generar descripción heurística (reutilizando la lógica normal)
+        cluster_descriptions = {}
+        cluster_stats = {}
+        df_ml_labels = df_ml.copy()
+        df_ml_labels['cluster'] = results['labels']
+        
+        for c_id in range(model.n_clusters):
+            c_data = df_ml_labels[df_ml_labels['cluster'] == c_id][model.features]
+            if len(c_data) > 0:
+                means = c_data.mean()
+                overall_means = df_ml[model.features].mean()
+                cluster_stats[f"Clúster {c_id}"] = means.to_dict()
+                deviations = []
+                for f in model.features:
+                    if overall_means[f] != 0:
+                        pct_diff = ((means[f] - overall_means[f]) / overall_means[f]) * 100
+                        deviations.append((f, pct_diff))
+                deviations.sort(key=lambda x: abs(x[1]), reverse=True)
+                
+                altos = [f"{f} (+{pct:.1f}%)" for f, pct in deviations if pct > 15]
+                bajos = [f"{f} ({pct:.1f}%)" for f, pct in deviations if pct < -15]
+                if altos and bajos:
+                    cluster_descriptions[f"Clúster {c_id}"] = f"Perfil con picos en {', '.join(altos)}; y déficit en {', '.join(bajos)}."
+                elif altos:
+                    cluster_descriptions[f"Clúster {c_id}"] = f"Destaca superior al promedio en {', '.join(altos)}."
+                elif bajos:
+                    cluster_descriptions[f"Clúster {c_id}"] = f"Déficit en {', '.join(bajos)}."
+                else:
+                    cluster_descriptions[f"Clúster {c_id}"] = "Perfil muy cercano al promedio global."
+            else:
+                cluster_descriptions[f"Clúster {c_id}"] = "Clúster vacío."
+                cluster_stats[f"Clúster {c_id}"] = {f: 0 for f in model.features}
+                
+        # Limitar a 2000 puntos para la gráfica
+        if len(results['x_pca']) > 2000:
+            indices = np.random.choice(len(results['x_pca']), 2000, replace=False)
+            results['x_pca'] = [results['x_pca'][i] for i in indices]
+            results['y_pca'] = [results['y_pca'][i] for i in indices]
+            results['labels'] = [results['labels'][i] for i in indices]
+            
+        results['message'] = 'Modelo actualizado exitosamente mediante aprendizaje incremental.'
+        results['features'] = model.features
+        results['silhouette_score'] = results.get('silhouette', None)
+        results['cluster_descriptions'] = cluster_descriptions
+        results['cluster_stats'] = cluster_stats
+        
+        return jsonify(results)
+    except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/optimal_k', methods=['POST'])
+@app.route('/api/find_optimal_k', methods=['POST'])
 def api_optimal_k():
     data = request.json
     algorithm = data.get('algorithm', 'kmeans')
