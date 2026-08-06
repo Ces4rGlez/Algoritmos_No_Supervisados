@@ -18,9 +18,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         historyList.forEach(item => {
             const tr = document.createElement('tr');
+            const defaultK = item.algorithm.toLowerCase() === 'kmeans' ? 16 : '?';
+            const kVal = item.n_clusters || defaultK;
             tr.innerHTML = `
                 <td>${item.timestamp || 'Desconocido'}</td>
-                <td><span class="chip">${item.algorithm.toUpperCase()} (k=${item.n_clusters || '?'})</span></td>
+                <td><span class="chip">${item.algorithm.toUpperCase()} (k=${kVal})</span></td>
                 <td>${item.silhouette ? parseFloat(item.silhouette).toFixed(3) : 'N/A'}</td>
                 <td><div style="display:flex; flex-wrap:wrap; gap:0.25rem;">${item.features.map(f => `<span class="chip" style="font-size:0.7rem; padding:0.1rem 0.4rem;">${f}</span>`).join('')}</div></td>
             `;
@@ -708,7 +710,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Después de entrenar, cambiar automáticamente a la pestaña de Resultados
             document.querySelector('[data-tab="results"]').click();
-            renderClustersChart(result.x_pca, result.y_pca, result.labels); // Gráfica 2D
+            renderClustersChart(result.x_pca, result.y_pca, result.labels);
+            renderPieChart(result.labels); // Gráfica 2D
             if (result.z_pca && result.z_pca.length > 0) {
                 render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels); // Gráfica 3D
             }
@@ -844,6 +847,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             msgEl.innerHTML = ` Modelo cargado: <strong>${filename}</strong>. Revisa la pestaña Resultados.`;
             msgEl.classList.remove('hidden');
+            
+            const incPanel = document.getElementById('incremental-train-panel');
+            if (incPanel) {
+                if (result.metadata && result.metadata.algorithm === 'kmeans') {
+                    incPanel.classList.remove('hidden');
+                } else {
+                    incPanel.classList.add('hidden');
+                }
+            }
 
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -852,6 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.getElementById('variance-val').innerText = (result.explained_variance * 100).toFixed(1);
             renderClustersChart(result.x_pca, result.y_pca, result.labels);
+            renderPieChart(result.labels);
             if (result.z_pca && result.z_pca.length > 0) render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels);
             if (result.features) buildPredictionForm(result.features);
 
@@ -899,6 +912,76 @@ document.addEventListener('DOMContentLoaded', () => {
             const filename = document.getElementById('model-select').value;
             if (!filename) { alert('Selecciona un modelo primero.'); return; }
             window.open(`/api/download_model?filename=${encodeURIComponent(filename)}`, '_blank');
+        });
+    }
+
+    const btnIncTrain = document.getElementById('btn-incremental-train');
+    if (btnIncTrain) {
+        btnIncTrain.addEventListener('click', async () => {
+            const btn = document.getElementById('btn-incremental-train');
+            btn.disabled = true;
+            btn.textContent = 'Actualizando centroides...';
+
+            try {
+                const res = await fetch('/api/incremental_train', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error);
+
+                alert(result.message);
+
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+                document.querySelector('[data-tab="results"]').classList.add('active');
+                document.getElementById('results').classList.add('active');
+
+                document.getElementById('variance-val').innerText = (result.explained_variance * 100).toFixed(1);
+                renderClustersChart(result.x_pca, result.y_pca, result.labels);
+            renderPieChart(result.labels);
+                if (result.z_pca && result.z_pca.length > 0) render3DChart(result.x_pca, result.y_pca, result.z_pca, result.labels);
+                
+                // Actualizar info de Silhouette y Tabla descriptiva
+                const silEl = document.getElementById('silhouette-val');
+                if (silEl && result.silhouette_score) silEl.innerText = result.silhouette_score.toFixed(3);
+                
+                // Re-dibujar tabla descriptiva (reutilizando lógica del modal de /api/train)
+                const descPanel = document.getElementById('cluster-descriptions-panel');
+                const head = document.getElementById('cluster-stats-head');
+                const body = document.getElementById('cluster-stats-body');
+                if (descPanel && head && body && result.features && result.cluster_stats) {
+                    descPanel.style.display = 'block';
+                    head.innerHTML = '<th>Clúster</th><th>Perfil Heurístico</th>';
+                    result.features.forEach(f => { head.innerHTML += `<th>${f}</th>`; });
+                    body.innerHTML = '';
+                    for (let c = 0; c < result.n_clusters; c++) {
+                        const tr = document.createElement('tr');
+                        const tdName = document.createElement('td');
+                        tdName.innerHTML = `<strong>Clúster ${c}</strong>`;
+                        tr.appendChild(tdName);
+                        
+                        const tdDesc = document.createElement('td');
+                        tdDesc.style.fontSize = '0.85rem';
+                        tdDesc.style.maxWidth = '300px';
+                        tdDesc.innerText = result.cluster_descriptions[`Clúster ${c}`] || '';
+                        tr.appendChild(tdDesc);
+
+                        result.features.forEach(f => {
+                            const val = result.cluster_stats[`Clúster ${c}`][f] || 0;
+                            const td = document.createElement('td');
+                            td.innerText = val.toFixed(2);
+                            tr.appendChild(td);
+                        });
+                        body.appendChild(tr);
+                    }
+                }
+            } catch (e) {
+                alert('Error en aprendizaje incremental: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" /></svg> Actualizar Modelo (Fine-Tuning)`;
+            }
         });
     }
 
@@ -1056,6 +1139,59 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function renderPieChart(labels) {
+        const ctx = document.getElementById('chart-pie');
+        if (!ctx) return;
+        
+        const counts = {};
+        labels.forEach(l => { counts[l] = (counts[l] || 0) + 1; });
+        
+        const palette = [
+            '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#db2777', '#0891b2', '#4f46e5',
+            '#ca8a04', '#65a30d', '#059669', '#0284c7', '#c026d3', '#e11d48', '#ea580c', '#f59e0b',
+            '#4ade80', '#2dd4bf', '#818cf8', '#a78bfa'
+        ];
+        
+        const backgroundColors = Object.keys(counts).map(c => palette[c % palette.length]);
+        const data = Object.values(counts);
+        const chartLabels = Object.keys(counts).map(c => `Clúster ${c}`);
+        
+        if (window.pieChartClusters) window.pieChartClusters.destroy();
+        
+        window.pieChartClusters = new Chart(ctx.getContext('2d'), {
+            type: 'pie',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 1,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12, usePointStyle: true, font: { size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const val = ctx.raw;
+                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = ((val / total) * 100).toFixed(1);
+                                return `${ctx.label}: ${val} personas (${pct}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     function render3DChart(x, y, z, labels) {
         // Dibuja la gráfica 3D interactiva usando la librería Plotly.
         // Los tres ejes son PCA1, PCA2 y PCA3. El color de cada punto indica el clúster.
@@ -1192,7 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
             optimalKResults.classList.add('hidden');
             
             try {
-                const res = await fetch('/api/optimal_k', {
+                const res = await fetch('/api/find_optimal_k', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ algorithm, features, max_k: 20 })

@@ -62,7 +62,7 @@ def main():
     np.random.seed(SEED)
 
     base_file = '../Cuestionario MBTI - Hoja 1.csv'
-    output_file = 'datos_mbti_10k.csv'
+    output_file = 'datos_mbti_2k.csv'
     
     if not os.path.exists(base_file):
         print(f"Error: Base file {base_file} not found.")
@@ -72,7 +72,7 @@ def main():
     print(f"Loaded {len(df_base)} original rows.")
     
     # We want 10000 rows in total: 54 original + 9946 synthetic
-    total_rows = 10000
+    total_rows = 2000
     num_synthetic = total_rows - len(df_base)
     
     # Generate exactly num_synthetic unique names
